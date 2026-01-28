@@ -115,5 +115,53 @@ public class WinValidatorTest {
 
         assertTrue(WinValidator.canWin(withDiscard, goldTile, false));
     }
+
+    /**
+     * 验证：一条二条三条（以及类似的顺子），即使牌的加入顺序是乱的，
+     * 也能够被 WinValidator 正确识别为顺子。
+     *
+     * 这里特别构造了条子花色中乱序的 123/456/789/123 + 11万 组成的 14 张牌：
+     * - 123条
+     * - 456条
+     * - 789条
+     * - 123条
+     * - 11万（将）
+     *
+     * 如果顺子判断只从「当前列表的第 0 张」往右找，而没有先按点数排序，
+     * 在某些顺序下会导致 123 条这种组合无法被识别为顺子。
+     */
+    @Test
+    void shunziStartsWithOneTiao_canWinEvenIfUnsorted() {
+        List<Tile> hand = new ArrayList<>();
+
+        // 第一组 123条（刻意乱序：2,3,1）
+        hand.add(new Tile(TileType.TIAO, 2, "t2a"));
+        hand.add(new Tile(TileType.TIAO, 3, "t3a"));
+        hand.add(new Tile(TileType.TIAO, 1, "t1a"));
+
+        // 第二组 456条（乱序：4,6,5）
+        hand.add(new Tile(TileType.TIAO, 4, "t4a"));
+        hand.add(new Tile(TileType.TIAO, 6, "t6a"));
+        hand.add(new Tile(TileType.TIAO, 5, "t5a"));
+
+        // 第三组 789条（乱序：7,9,8）
+        hand.add(new Tile(TileType.TIAO, 7, "t7a"));
+        hand.add(new Tile(TileType.TIAO, 9, "t9a"));
+        hand.add(new Tile(TileType.TIAO, 8, "t8a"));
+
+        // 第四组 123条（再次乱序：2,1,3）
+        hand.add(new Tile(TileType.TIAO, 2, "t2b"));
+        hand.add(new Tile(TileType.TIAO, 1, "t1b"));
+        hand.add(new Tile(TileType.TIAO, 3, "t3b"));
+
+        // 将：11万
+        hand.add(new Tile(TileType.WAN, 1, "w1a"));
+        hand.add(new Tile(TileType.WAN, 1, "w1b"));
+
+        // 不设金牌
+        Tile goldTile = null;
+
+        assertTrue(WinValidator.canWin(hand, goldTile, false));
+    }
 }
 

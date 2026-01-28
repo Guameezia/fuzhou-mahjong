@@ -350,7 +350,14 @@ public class GameController {
      * 广播游戏状态（过滤敏感信息）
      */
     private void broadcastGameState(String roomId, GameState gameState) {
-        // 为每个玩家发送定制化的游戏状态（只能看到自己的手牌）
+        // 广播公共信息
+        Map<String, Object> publicView = buildPublicView(gameState);
+        messagingTemplate.convertAndSend(
+            "/topic/room/" + roomId,
+            publicView
+        );
+
+        // 为每个玩家发送定制化的游戏状态（只能看到自己的手牌 + 自己的暗杠）
         for (Player player : gameState.getPlayers()) {
             Map<String, Object> playerView = buildPlayerView(gameState, player.getId());
             messagingTemplate.convertAndSend(
@@ -358,13 +365,6 @@ public class GameController {
                 playerView
             );
         }
-        
-        // 广播公共信息
-        Map<String, Object> publicView = buildPublicView(gameState);
-        messagingTemplate.convertAndSend(
-            "/topic/room/" + roomId,
-            publicView
-        );
     }
 
     /**
@@ -372,17 +372,25 @@ public class GameController {
      */
     private Map<String, Object> buildPlayerView(GameState gameState, String playerId) {
         Map<String, Object> view = new HashMap<>();
-        
+
         Player currentPlayer = gameState.getPlayers().stream()
             .filter(p -> p.getId().equals(playerId))
             .findFirst()
             .orElse(null);
-        
+
         if (currentPlayer != null) {
             view.put("myHandTiles", currentPlayer.getHandTiles());
             view.put("myFlowerTiles", currentPlayer.getFlowerTiles());
-            view.put("myExposedMelds", currentPlayer.getExposedMelds());
-            
+            // 自己视角：明牌 + 暗杠都要看得到
+            java.util.List<java.util.List<Tile>> myAllMelds = new java.util.ArrayList<>();
+            if (currentPlayer.getExposedMelds() != null) {
+                myAllMelds.addAll(currentPlayer.getExposedMelds());
+            }
+            if (currentPlayer.getConcealedKongs() != null) {
+                myAllMelds.addAll(currentPlayer.getConcealedKongs());
+            }
+            view.put("myExposedMelds", myAllMelds);
+
             // 添加可用操作信息
             Map<String, Object> availableActions = gameState.getPlayerActions(playerId);
             view.put("availableActions", availableActions);

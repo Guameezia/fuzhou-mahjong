@@ -18,8 +18,8 @@ public class WinValidator {
      * 福州麻将和牌规则：
      * 1. 平和：标准麻将胡牌形式（n个顺子/刻子 + 1对将）
      * 2. 三头金：手里有3张金
-     * 3. 抢金：开金后抓到金就和
-     * 4. 金将：2张金做将，其他组成面子
+     * 3. 抢金：开金后抓到金就和（不看具体牌型）
+     * 4. 金将 / 金雀 / 金作面子：金牌视作“万能牌（癞子）”，可补任意牌
      */
     public static boolean canWin(List<Tile> handTiles, Tile goldTile, boolean isQiangJin) {
         if (handTiles == null || handTiles.isEmpty()) {
@@ -53,11 +53,153 @@ public class WinValidator {
             return true;
         }
 
-        // 标准和牌判断（包括金雀、金将、金作面子），使用过滤后的牌
-        // 关键：金牌按“万能牌（癞子）”处理，不作为固定牌型参与分组与计数，避免双重计数
-        List<Tile> tilesWithoutGold = removeAllGoldTiles(validTiles, goldTile);
-        return checkStandardWin(validTiles.size(), tilesWithoutGold, goldCount);
+        // 将所有非金牌转换为“计数数组”表示，金牌只记录数量
+        int[][] counts = new int[5][10]; // 0:万,1:条,2:饼,3:风,4:箭; 点数用1..9
+        for (Tile tile : validTiles) {
+            if (goldTile != null && tile.isSameAs(goldTile)) {
+                continue;
+            }
+            int typeIndex = mapTypeIndex(tile.getType());
+            int value = tile.getValue();
+            if (value >= 1 && value <= 9 && typeIndex >= 0) {
+                counts[typeIndex][value]++;
+            }
+        }
+
+        int totalTileCount = validTiles.size();
+
+        // 张数约束：暗牌（+点炮牌）总数必须满足 3n+2，且不超过 17 张
+        if (totalTileCount < 2 || totalTileCount > 17 || (totalTileCount % 3) != 2) {
+            return false;
+        }
+
+        // 使用“计数 + 金牌 DFS”进行标准胡牌判断（平和 / 金雀 / 金将 / 金作面子）
+        return canWinWithCounts(counts, goldCount);
     }
+
+    /**
+     * 计数版胡牌判断入口：
+     * - 先枚举“将”的用法（2 普通 / 1 普通+1 金 / 2 金）
+     * - 剩余牌全部拆成面子（AAA/ABC），缺的用金补
+     */
+    private static boolean canWinWithCounts(int[][] counts, int goldCount) {
+        // 情况一：2 张金直接做将
+        if (goldCount >= 2) {
+            if (allMelds(counts, goldCount - 2)) {
+                log.info("金将和牌！");
+                return true;
+            }
+        }
+
+        // 情况二：普通牌相关的将（两张普通 / 一张普通+一张金）
+        for (int type = 0; type < counts.length; type++) {
+            for (int value = 1; value <= 9; value++) {
+                int c = counts[type][value];
+                if (c == 0) {
+                    continue;
+                }
+
+                // 1) 两张普通牌做将
+                if (c >= 2) {
+                    counts[type][value] -= 2;
+                    if (allMelds(counts, goldCount)) {
+                        log.info("平和！");
+                        counts[type][value] += 2; // 回溯前先恢复
+                        return true;
+                    }
+                    counts[type][value] += 2;
+                }
+
+                // 2) 一张普通牌 + 一张金做将（金雀）
+                if (c >= 1 && goldCount >= 1) {
+                    counts[type][value] -= 1;
+                    if (allMelds(counts, goldCount - 1)) {
+                        log.info("金雀和牌！");
+                        counts[type][value] += 1;
+                        return true;
+                    }
+                    counts[type][value] += 1;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * 检查“所有剩余牌 + 剩余金”能否全部拆成面子（AAA/ABC）
+     */
+    private static boolean allMelds(int[][] counts, int goldCount) {
+        // 找到当前还存在的最小一张牌
+        int type = -1;
+        int value = -1;
+        outer:
+        for (int t = 0; t < counts.length; t++) {
+            for (int v = 1; v <= 9; v++) {
+                if (counts[t][v] > 0) {
+                    type = t;
+                    value = v;
+                    break outer;
+                }
+            }
+        }
+
+        // 已经没有普通牌了：金必须也用完
+        if (type == -1) {
+            return goldCount == 0;
+        }
+
+        // 尝试一：以 (type, value) 组刻子 AAA（可以用金补）
+        int have = counts[type][value];
+        int needForKe = Math.max(0, 3 - have);
+        if (needForKe <= goldCount && have > 0) {
+            int used = Math.min(3, have);
+            counts[type][value] -= used;
+            if (allMelds(counts, goldCount - needForKe)) {
+                counts[type][value] += used;
+                return true;
+            }
+            counts[type][value] += used;
+        }
+
+        // 尝试二：如果是万/条/饼，再尝试顺子 ABC（可以用金补）
+        if (isShunziType(type) && value <= 7) {
+            int have0 = counts[type][value];
+            int have1 = counts[type][value + 1];
+            int have2 = counts[type][value + 2];
+
+            int totalHave = have0 + have1 + have2;
+            int needForShun = Math.max(0, 3 - totalHave);
+
+            if (needForShun <= goldCount && value + 2 <= 9) {
+                // 扣除一组顺子里真实存在的牌（每个位置最多扣 1）
+                int use0 = Math.min(1, have0);
+                int use1 = Math.min(1, have1);
+                int use2 = Math.min(1, have2);
+
+                counts[type][value]     -= use0;
+                counts[type][value + 1] -= use1;
+                counts[type][value + 2] -= use2;
+
+                if (allMelds(counts, goldCount - needForShun)) {
+                    counts[type][value]     += use0;
+                    counts[type][value + 1] += use1;
+                    counts[type][value + 2] += use2;
+                    return true;
+                }
+
+                // 回溯
+                counts[type][value]     += use0;
+                counts[type][value + 1] += use1;
+                counts[type][value + 2] += use2;
+            }
+        }
+
+        // 无法通过任何一种拆分
+        return false;
+    }
+
+    // === 工具方法 ===
 
     /**
      * 统计金牌数量
@@ -66,7 +208,7 @@ public class WinValidator {
         if (goldTile == null) {
             return 0;
         }
-        
+
         int count = 0;
         for (Tile tile : handTiles) {
             if (tile.isSameAs(goldTile)) {
@@ -77,295 +219,29 @@ public class WinValidator {
     }
 
     /**
-     * 检查标准和牌
+     * 将 TileType 映射到内部计数数组的下标
      */
-    private static boolean checkStandardWin(int totalTileCount, List<Tile> tilesWithoutGold, int goldCount) {
-        // 福州麻将（16 张体系）张数要点：
-        // - 开局：庄家 17 张，其余 16 张
-        // - 自摸/点炮胡牌时：暗牌 + (点炮牌) 的总数应满足「3n + 2」
-        //   在本实现里，n=5 时总数为 17（= 5 副面子 + 1 对将）。
-        // - 吃/碰/杠后，暗牌会每次减少 3 张，因此可能出现 17、14、11、8、5、2 等。
-        //
-        // 注意：这里只拿到“暗牌（+可能点炮加入的一张）”，不包含桌面明牌，
-        // 所以不能写死为 17，只能按「3n + 2」约束并做上限保护。
-        if (totalTileCount < 2 || totalTileCount > 17 || (totalTileCount % 3) != 2) {
-            return false;
+    private static int mapTypeIndex(TileType type) {
+        switch (type) {
+            case WAN:
+                return 0;
+            case TIAO:
+                return 1;
+            case BING:
+                return 2;
+            case WIND:
+                return 3;
+            case DRAGON:
+                return 4;
+            default:
+                return -1;
         }
-
-        // 将（对子）有三种可能：
-        // 1) 两张普通牌
-        // 2) 一张普通牌 + 一张金（癞子）
-        // 3) 两张金
-
-        // 3) 两张金做将
-        if (goldCount >= 2) {
-            if (checkAllMelds(new ArrayList<>(tilesWithoutGold), goldCount - 2)) {
-                log.info("金将和牌！");
-                return true;
-            }
-        }
-
-        // 1) / 2) 普通牌相关的将
-        Map<String, Integer> tileCountMap = buildTileCountMap(tilesWithoutGold);
-        for (Map.Entry<String, Integer> entry : tileCountMap.entrySet()) {
-            String key = entry.getKey();
-            int count = entry.getValue();
-
-            // 1) 两张普通牌做将
-            if (count >= 2) {
-                List<Tile> remaining = new ArrayList<>(tilesWithoutGold);
-                int removed = removeTilesByKey(remaining, key, 2);
-                if (removed == 2 && checkAllMelds(remaining, goldCount)) {
-                    log.info("平和！");
-                    return true;
-                }
-            }
-
-            // 2) 一张普通牌 + 一张金做将（金雀）
-            if (count >= 1 && goldCount >= 1) {
-                List<Tile> remaining = new ArrayList<>(tilesWithoutGold);
-                int removed = removeTilesByKey(remaining, key, 1);
-                if (removed == 1 && checkAllMelds(remaining, goldCount - 1)) {
-                    log.info("金雀和牌！");
-                    return true;
-                }
-            }
-        }
-
-        return false;
     }
 
     /**
-     * 检查剩余牌是否都能组成面子（顺子或刻子）
+     * 是否是可以组成顺子的花色（万/条/饼）
      */
-    private static boolean checkAllMelds(List<Tile> tiles, int goldCount) {
-        if (tiles.isEmpty()) {
-            return true;
-        }
-
-        // 按类型分组
-        Map<TileType, List<Tile>> groupedTiles = groupByType(tiles);
-        
-        // 递归检查每种类型的牌
-        return checkMeldsRecursive(groupedTiles, goldCount);
-    }
-
-    /**
-     * 递归检查面子
-     */
-    private static boolean checkMeldsRecursive(Map<TileType, List<Tile>> groupedTiles, int goldCount) {
-        // 所有牌都处理完了
-        if (groupedTiles.values().stream().allMatch(List::isEmpty)) {
-            return goldCount == 0; // 金牌也要用完
-        }
-
-        // 找到第一组有牌的类型
-        TileType currentType = null;
-        for (Map.Entry<TileType, List<Tile>> entry : groupedTiles.entrySet()) {
-            if (!entry.getValue().isEmpty()) {
-                currentType = entry.getKey();
-                break;
-            }
-        }
-
-        if (currentType == null) {
-            return goldCount == 0;
-        }
-
-        List<Tile> currentTiles = groupedTiles.get(currentType);
-        Tile firstTile = currentTiles.get(0);
-
-        // 跳过花牌类型（FLOWER），花牌不参与胡牌判断
-        if (currentType == TileType.FLOWER) {
-            // 移除所有花牌，继续处理其他牌
-            groupedTiles.get(currentType).clear();
-            return checkMeldsRecursive(groupedTiles, goldCount);
-        }
-
-        // 尝试组成刻子（3张相同）
-        if (tryFormKezi(groupedTiles, currentType, firstTile, goldCount)) {
-            return true;
-        }
-
-        // 尝试组成顺子（3张连续）
-        if (!firstTile.isFlowerTile() && tryFormShunzi(groupedTiles, currentType, firstTile, goldCount)) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * 尝试组成刻子
-     */
-    private static boolean tryFormKezi(Map<TileType, List<Tile>> groupedTiles, 
-                                       TileType type, Tile tile, 
-                                       int goldCount) {
-        List<Tile> tiles = groupedTiles.get(type);
-        int sameCount = countSameTiles(tiles, tile);
-        
-        // 有3张相同的
-        if (sameCount >= 3) {
-            List<Tile> removed = removeSameTiles(tiles, tile, 3);
-            if (checkMeldsRecursive(groupedTiles, goldCount)) {
-                return true;
-            }
-            tiles.addAll(removed); // 回溯
-        }
-        
-        // 2张相同 + 1张金
-        if (sameCount >= 2 && goldCount >= 1) {
-            List<Tile> removed = removeSameTiles(tiles, tile, 2);
-            if (checkMeldsRecursive(groupedTiles, goldCount - 1)) {
-                return true;
-            }
-            tiles.addAll(removed); // 回溯
-        }
-        
-        // 1张相同 + 2张金
-        if (sameCount >= 1 && goldCount >= 2) {
-            List<Tile> removed = removeSameTiles(tiles, tile, 1);
-            if (checkMeldsRecursive(groupedTiles, goldCount - 2)) {
-                return true;
-            }
-            tiles.addAll(removed); // 回溯
-        }
-        
-        return false;
-    }
-
-    /**
-     * 尝试组成顺子
-     */
-    private static boolean tryFormShunzi(Map<TileType, List<Tile>> groupedTiles,
-                                         TileType type, Tile tile,
-                                         int goldCount) {
-        List<Tile> tiles = groupedTiles.get(type);
-        int value = tile.getValue();
-        
-        // 字牌不能组顺子
-        if (type == TileType.WIND || type == TileType.DRAGON) {
-            return false;
-        }
-        
-        // 检查是否有连续的三张（可以用金代替）
-        int[] needs = new int[3]; // 需要value, value+1, value+2
-        for (int i = 0; i < 3; i++) {
-            needs[i] = countTilesByValue(tiles, value + i);
-        }
-        
-        int totalNeeded = 3;
-        int totalHave = needs[0] + needs[1] + needs[2];
-        int goldNeeded = Math.max(0, totalNeeded - totalHave);
-        
-        if (goldNeeded <= goldCount && value + 2 <= 9) {
-            // 尝试移除这个顺子
-            List<Tile> removed = new ArrayList<>();
-            for (int i = 0; i < 3; i++) {
-                if (needs[i] > 0) {
-                    Tile toRemove = findTileByValue(tiles, value + i);
-                    if (toRemove != null) {
-                        tiles.remove(toRemove);
-                        removed.add(toRemove);
-                    }
-                }
-            }
-            
-            if (checkMeldsRecursive(groupedTiles, goldCount - goldNeeded)) {
-                return true;
-            }
-            
-            // 回溯
-            tiles.addAll(removed);
-        }
-        
-        return false;
-    }
-
-    // === 工具方法 ===
-
-    private static Map<String, Integer> buildTileCountMap(List<Tile> tiles) {
-        Map<String, Integer> map = new HashMap<>();
-        for (Tile tile : tiles) {
-            String key = getTileKey(tile);
-            map.put(key, map.getOrDefault(key, 0) + 1);
-        }
-        return map;
-    }
-
-    private static String getTileKey(Tile tile) {
-        return tile.getType() + "_" + tile.getValue();
-    }
-
-    private static Tile tileFromKey(String key) {
-        // key: TYPE_value
-        String[] parts = key.split("_");
-        TileType type = TileType.valueOf(parts[0]);
-        int value = Integer.parseInt(parts[1]);
-        return new Tile(type, value, key);
-    }
-
-    private static Map<TileType, List<Tile>> groupByType(List<Tile> tiles) {
-        Map<TileType, List<Tile>> map = new HashMap<>();
-        for (Tile tile : tiles) {
-            map.computeIfAbsent(tile.getType(), k -> new ArrayList<>()).add(tile);
-        }
-        return map;
-    }
-
-    private static int removeTiles(List<Tile> tiles, Tile target, int count) {
-        int removed = 0;
-        Iterator<Tile> iterator = tiles.iterator();
-        while (iterator.hasNext() && removed < count) {
-            Tile tile = iterator.next();
-            if (tile.isSameAs(target)) {
-                iterator.remove();
-                removed++;
-            }
-        }
-        return removed;
-    }
-
-    private static int removeTilesByKey(List<Tile> tiles, String key, int count) {
-        Tile target = tileFromKey(key);
-        return removeTiles(tiles, target, count);
-    }
-
-    private static List<Tile> removeAllGoldTiles(List<Tile> tiles, Tile goldTile) {
-        if (goldTile == null) {
-            return new ArrayList<>(tiles);
-        }
-        List<Tile> result = new ArrayList<>();
-        for (Tile t : tiles) {
-            if (!t.isSameAs(goldTile)) {
-                result.add(t);
-            }
-        }
-        return result;
-    }
-
-    private static int countSameTiles(List<Tile> tiles, Tile target) {
-        return (int) tiles.stream().filter(t -> t.isSameAs(target)).count();
-    }
-
-    private static List<Tile> removeSameTiles(List<Tile> tiles, Tile target, int count) {
-        List<Tile> removed = new ArrayList<>();
-        Iterator<Tile> iterator = tiles.iterator();
-        while (iterator.hasNext() && removed.size() < count) {
-            Tile tile = iterator.next();
-            if (tile.isSameAs(target)) {
-                iterator.remove();
-                removed.add(tile);
-            }
-        }
-        return removed;
-    }
-
-    private static int countTilesByValue(List<Tile> tiles, int value) {
-        return (int) tiles.stream().filter(t -> t.getValue() == value).count();
-    }
-
-    private static Tile findTileByValue(List<Tile> tiles, int value) {
-        return tiles.stream().filter(t -> t.getValue() == value).findFirst().orElse(null);
+    private static boolean isShunziType(int typeIndex) {
+        return typeIndex == 0 || typeIndex == 1 || typeIndex == 2;
     }
 }

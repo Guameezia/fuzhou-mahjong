@@ -12,7 +12,8 @@ public class Player {
     private String name;                        // 玩家名称
     private int position;                       // 位置（0-3）
     private List<Tile> handTiles;               // 手牌
-    private List<List<Tile>> exposedMelds;      // 明牌（碰、杠、吃的牌）
+    private List<List<Tile>> exposedMelds;      // 明牌（碰、杠、吃的牌，所有人可见）
+    private List<List<Tile>> concealedKongs;    // 暗杠（只有自己可见）
     private List<Tile> flowerTiles;             // 补的花牌
     private int score;                          // 当前分数
     private boolean isDealer;                   // 是否是庄家
@@ -23,6 +24,7 @@ public class Player {
         this.position = position;
         this.handTiles = new ArrayList<>();
         this.exposedMelds = new ArrayList<>();
+        this.concealedKongs = new ArrayList<>();
         this.flowerTiles = new ArrayList<>();
         this.score = 0;
         this.isDealer = false;
@@ -68,6 +70,17 @@ public class Player {
         this.exposedMelds = exposedMelds;
     }
 
+    /**
+     * 获取暗杠列表（仅自己可见）
+     */
+    public List<List<Tile>> getConcealedKongs() {
+        return concealedKongs;
+    }
+
+    public void setConcealedKongs(List<List<Tile>> concealedKongs) {
+        this.concealedKongs = concealedKongs;
+    }
+
     public List<Tile> getFlowerTiles() {
         return flowerTiles;
     }
@@ -100,6 +113,7 @@ public class Player {
         handTiles.clear();
         exposedMelds.clear();
         flowerTiles.clear();
+        concealedKongs.clear();
     }
 
     /**
@@ -183,5 +197,17 @@ public class Player {
      */
     public void addExposedMeld(List<Tile> meld) {
         exposedMelds.add(new ArrayList<>(meld));
+    }
+
+    /**
+     * 添加暗杠组合
+     * 暗杠只加入 concealedKongs，不加入 exposedMelds，
+     * 这样在构建公共视图时不会被其他玩家看到。
+     */
+    public void addConcealedKong(List<Tile> kong) {
+        if (kong == null || kong.isEmpty()) {
+            return;
+        }
+        concealedKongs.add(new ArrayList<>(kong));
     }
 }

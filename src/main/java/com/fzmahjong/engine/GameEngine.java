@@ -857,9 +857,10 @@ public class GameEngine {
         
         // 移除手牌中的四张牌
         matchingTiles.forEach(player::removeTile);
-        
-        // 添加到明牌
-        player.addExposedMeld(matchingTiles);
+
+        // 暗杠：牌面只对自己可见，不应出现在公共明牌中
+        // 因此不放入 exposedMelds，而是放入专门的暗杠列表
+        player.addConcealedKong(matchingTiles);
         
         // 清除操作状态
         gameState.clearAllActions();
@@ -911,18 +912,42 @@ public class GameEngine {
             log.warn("玩家不存在：{}", playerId);
             return false;
         }
-        
+
+        // 区分自摸与点炮：
+        // - 自摸：使用当前手牌直接判断胡牌，不额外加任何牌
+        // - 点炮：把别人打出的那张牌临时加入，再判断胡牌
         Tile discardedTile = gameState.getLastDiscardedTile();
-        boolean canHu = ActionChecker.canHu(player, discardedTile, 
+        int lastDiscardPlayerIndex = gameState.getLastDiscardPlayerIndex();
+
+        Tile tileForHuCheck = null;
+        boolean isZiMo;
+
+        if (discardedTile == null) {
+            // 没有最近弃牌，一定是自摸
+            isZiMo = true;
+        } else if (lastDiscardPlayerIndex == player.getPosition()) {
+            // 保护性判断：最近弃牌来自自己，也按自摸处理（理论上不该出现）
+            isZiMo = true;
+        } else {
+            // 最近弃牌来自其他玩家，这是点炮
+            isZiMo = false;
+            tileForHuCheck = discardedTile;
+        }
+
+        boolean canHu = ActionChecker.canHu(player, tileForHuCheck,
             gameState.getGoldTile(), false);
         
         if (!canHu) {
-            log.warn("玩家 {} 不能胡牌", player.getName());
+            log.warn("玩家 {} 不能胡牌（类型={}，最近弃牌={}，弃牌玩家索引={}）",
+                player.getName(),
+                isZiMo ? "自摸" : "点炮",
+                discardedTile,
+                lastDiscardPlayerIndex);
             return false;
         }
         
         // 如果胡的是别人打出的牌，需要添加到手牌
-        if (discardedTile != null && gameState.getLastDiscardPlayerIndex() != player.getPosition()) {
+        if (!isZiMo && discardedTile != null && lastDiscardPlayerIndex != player.getPosition()) {
             player.addTile(discardedTile);
         }
         
