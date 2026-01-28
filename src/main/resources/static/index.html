@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>福州麻将</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            /* 仿真牌桌背景 - 深绿色毛毡质感 */
+            background: 
+                radial-gradient(circle at 20% 50%, rgba(0, 100, 0, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(0, 80, 0, 0.2) 0%, transparent 50%),
+                linear-gradient(135deg, #1a5f1a 0%, #0d3d0d 50%, #1a5f1a 100%);
+            background-size: 100% 100%, 100% 100%, 100% 100%;
+            min-height: 100vh;
+            padding: 20px;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* 添加纹理效果 */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px),
+                repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            position: relative;
+            z-index: 1;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+
+        .login-section, .game-section {
+            display: none;
+        }
+
+        .login-section.active, .game-section.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        input, button {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 10px;
+            transition: transform 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .info-panel {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0;
+            padding: 8px;
+            background: white;
+            border-radius: 5px;
+        }
+
+        /* 方桌布局 */
+        .table-container {
+            position: relative;
+            width: 100%;
+            min-height: 600px;
+            margin: 20px 0;
+            background: 
+                radial-gradient(ellipse at center, rgba(0, 150, 0, 0.4) 0%, rgba(0, 100, 0, 0.6) 100%),
+                linear-gradient(135deg, #1a5f1a 0%, #0d3d0d 50%, #1a5f1a 100%);
+            border-radius: 20px;
+            padding: 15px;
+            box-shadow: 
+                inset 0 0 50px rgba(0, 0, 0, 0.3),
+                0 10px 40px rgba(0, 0, 0, 0.5);
+            overflow: hidden; /* 防止左右两家越出牌桌 */
+        }
+        
+        /* 手机适配 */
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            .table-container {
+                min-height: 500px;
+                padding: 10px;
+            }
+            
+            .player-position {
+                min-width: 120px;
+                padding: 8px;
+                font-size: 11px;
+            }
+            
+            .player-name {
+                font-size: 13px !important;
+            }
+            
+            .player-stats {
+                font-size: 10px !important;
+            }
+            
+            .table-center {
+                width: 180px;
+                height: 180px;
+            }
+            
+            .table-center h3 {
+                font-size: 12px;
+            }
+            
+            .discard-pile-center {
+                max-width: 150px;
+                max-height: 100px;
+            }
+            
+            .discard-pile-center .tile {
+                width: 22px;
+                height: 31px;
+                font-size: 7px;
+            }
+            
+            .meld-group .tile {
+                width: 22px;
+                height: 31px;
+                font-size: 9px;
+            }
+            
+            .meld-label {
+                font-size: 9px;
+                padding: 1px 3px;
+            }
+            
+            .player-top {
+                top: 8px;
+            }
+            
+            .player-bottom {
+                bottom: 10px;
+                min-width: 280px;
+            }
+            
+            .player-left {
+                left: 2px;
+            }
+            
+            .player-right {
+                right: 2px;
+            }
+            
+            .my-hand {
+                padding: 15px;
+            }
+            
+            .tile {
+                width: 50px;
+                height: 70px;
+            }
+            
+            .action-buttons {
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            
+            .action-btn {
+                padding: 10px 20px;
+                font-size: 16px;
+            }
+            
+            #actionButtonsPanel {
+                padding: 12px;
+                bottom: 10px !important;
+                left: 50% !important;
+                transform: translateX(-50%) !important;
+                min-width: 250px !important;
+                max-width: 90% !important;
+            }
+        }
+
+        /* 方桌中心区域（牌池） */
+        .table-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 300px;
+            height: 300px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            z-index: 10;
+        }
+
+        .table-center h3 {
+            color: white;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        /* 桌面尽量少文字：隐藏“牌池”标题 */
+        .table-center h3 {
+            display: none;
+        }
+
+        .discard-pile-center {
+            max-width: 200px;
+            max-height: 150px;
+            overflow: auto;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 3px;
+            justify-content: center;
+        }
+
+        .discard-pile-center .tile {
+            width: 32px;
+            height: 45px;
+            font-size: 10px;
+        }
+
+        /* 四个玩家位置 */
+        .player-position {
+            position: absolute;
+            min-width: 140px;
+            padding: 8px;
+            background: transparent;
+            border-radius: 15px;
+            border: none;
+            box-shadow: none;
+            transition: all 0.3s ease;
+            max-width: 48%;
+        }
+
+        .player-position.active {
+            border: 2px solid #667eea;
+            background: rgba(231, 240, 255, 0.3);
+            box-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
+            /* 不能用 transform: scale(...)：会覆盖各方位 translateX/Y，导致轮到该玩家时位置跳动/右偏移 */
+            outline: 2px solid rgba(102, 126, 234, 0.75);
+            outline-offset: 2px;
+        }
+
+        .player-position.dealer {
+            border: 2px solid #ffd700;
+            background: rgba(255, 215, 0, 0.1);
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.4);
+        }
+
+        /* 上方玩家（对家） */
+        .player-top {
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            /* 顶部区域更紧凑，避免与牌池重叠 */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* 下方玩家（自己） */
+        .player-bottom {
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            min-width: 400px;
+        }
+
+        /* 左侧玩家（上家） */
+        .player-left {
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            text-align: center;
+        }
+
+        /* 右侧玩家（下家） */
+        .player-right {
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            text-align: center;
+        }
+
+        /* 玩家信息 */
+        .player-info {
+            margin-bottom: 10px;
+        }
+
+        /* 顶部玩家：碰/吃/杠 与 暗牌+花牌 换位置（名字 → 明牌 → 暗牌/花牌） */
+        .player-top .player-info {
+            order: 0;
+            margin-bottom: 4px;
+        }
+
+        .player-top .exposed-melds {
+            order: 1;
+            margin-top: 0;
+            margin-bottom: 4px;
+        }
+
+        .player-top .player-hand {
+            order: 2;
+            margin-top: 2px;
+        }
+
+        .player-top .player-flowers {
+            order: 3;
+        }
+
+        .player-name {
+            font-weight: bold;
+            font-size: 18px;
+            margin-bottom: 5px;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+        }
+
+        .player-stats {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.9);
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+        
+        /* 桌面尽量少文字：只保留玩家名 */
+        .player-stats {
+            display: none;
+        }
+
+        /* 玩家手牌显示（显示背面） */
+        .player-hand {
+            display: inline-flex; /* 与花牌同一行紧挨着放 */
+            gap: 1px;
+            justify-content: center;
+            margin-top: 8px;
+            flex-wrap: nowrap;
+        }
+        
+        .player-hand .tile-back {
+            width: 22px;
+            height: 30px;
+            background: linear-gradient(145deg, #8b4513 0%, #6b3410 100%);
+            border: 1px solid #5a2a0a;
+            border-radius: 4px;
+            box-shadow: 
+                0 1px 2px rgba(0,0,0,0.3),
+                inset 0 1px 0 rgba(255,255,255,0.1);
+            position: relative;
+        }
+
+        /* 数量角标（暗牌/花牌的“只显示一张 + 数字”） */
+        .tile-count-wrapper {
+            position: relative;
+        }
+
+        .tile-count-badge {
+            position: absolute;
+            right: -6px;
+            bottom: -6px;
+            min-width: 18px;
+            height: 18px;
+            padding: 0 5px;
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            line-height: 1;
+            font-weight: 800;
+            color: #fff;
+            /* 统一为黑色背景，确保暗牌和花牌角标一致 */
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+            pointer-events: none;
+            /* 提高 z-index，确保角标始终在最上层，不被图片遮挡 */
+            z-index: 1000;
+        }
+        
+        /* 确保花牌图片不会遮挡角标 */
+        .player-flowers .flower-tile img {
+            position: relative;
+            z-index: 1;
+        }
+        
+        /* 确保暗牌也不会遮挡角标 */
+        .player-hand .tile-back {
+            position: relative;
+            z-index: 1;
+        }
+        
+        .player-hand .tile-back::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 12px;
+            height: 12px;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            border-radius: 50%;
+        }
+        
+        /* 不同方向的手牌排列 */
+        .player-top .player-hand {
+            flex-direction: row;
+        }
+        
+        .player-bottom .player-hand {
+            flex-direction: row;
+        }
+        
+        /* 左右两家现在也只显示 1 张暗牌 + 花牌，无需再做两列网格 */
+        .player-left .player-hand,
+        .player-right .player-hand {
+            display: inline-flex;
+            flex-direction: row;
+            justify-content: center;
+        }
+
+        /* 明牌组合（吃、碰、杠）：一行一行从上到下 */
+        .exposed-melds {
+            margin-top: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            align-items: center;
+        }
+        
+        /* 上下家：吃碰杠横着放，每一组之间留出一张牌宽度左右的距离 */
+        .player-top .exposed-melds,
+        .player-bottom .exposed-melds {
+            flex-direction: row;
+            justify-content: center;
+            gap: 34px; /* 约等于一张牌的宽度 */
+            flex-wrap: nowrap;
+        }
+        
+        /* 左右家：吃碰杠仍然一行一行竖着排 */
+        .player-left .exposed-melds {
+            flex-direction: column;
+        }
+        
+        .player-right .exposed-melds {
+            flex-direction: column;
+        }
+
+        .meld-group {
+            display: flex;
+            gap: 1px;
+            justify-content: center;
+            align-items: center;
+            padding: 2px;
+            background: rgba(255, 255, 255, 0.35);
+            border-radius: 5px;
+            max-width: 100%;
+        }
+
+        .meld-group .tile {
+            width: 30px;
+            height: 42px;
+            font-size: 10px;
+            cursor: default;
+        }
+
+        .meld-label {
+            display: none; /* 桌面尽量少字：不显示吃/碰/杠标签 */
+        }
+        
+        /* 操作动画效果 */
+        @keyframes actionHighlight {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 rgba(102, 126, 234, 0);
+            }
+            50% {
+                transform: scale(1.1);
+                box-shadow: 0 0 20px rgba(102, 126, 234, 0.8);
+            }
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 rgba(102, 126, 234, 0);
+            }
+        }
+        
+        .meld-group.new-action {
+            animation: actionHighlight 1s ease-out;
+        }
+
+        /* 花牌显示：与暗牌同一行紧挨着放 */
+        .player-flowers {
+            display: inline-flex;
+            gap: 3px;
+            justify-content: flex-start;
+            margin-top: 0;
+            margin-left: 4px;
+            flex-wrap: nowrap;
+            vertical-align: middle;
+        }
+
+        .player-flowers .flower-tile {
+            width: 20px;
+            height: 28px;
+            font-size: 8px;
+            border-width: 1px;
+        }
+        
+        /* 不同方向的花牌排列：四家统一为一行横向 */
+        .player-top .player-flowers,
+        .player-bottom .player-flowers,
+        .player-left .player-flowers,
+        .player-right .player-flowers {
+            flex-direction: row;
+        }
+
+        .tiles-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 15px;
+            perspective: 1000px;
+        }
+
+        .tile {
+            width: 48px;
+            height: 68px;
+            background: linear-gradient(145deg, #ffffff 0%, #f5f5f5 100%);
+            border: 2px solid #8b4513;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            box-shadow: 
+                0 2px 4px rgba(0,0,0,0.2),
+                inset 0 1px 0 rgba(255,255,255,0.8);
+            transform-style: preserve-3d;
+            overflow: hidden;
+        }
+
+        /* 麻将牌图片样式 */
+        .tile img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 6px;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+            display: block;
+        }
+        
+        /* 兼容不支持:has()的浏览器 */
+        .tile.has-image {
+            font-size: 0;
+        }
+        
+        .tile.has-image img {
+            display: block;
+        }
+
+        /* 默认显示文字 */
+        .tile {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        /* 如果有图片，隐藏文字（使用has-image类） */
+        .tile.has-image {
+            font-size: 0;
+        }
+
+        /* 只对自己手牌启用 hover 高亮，桌面上的牌不再“叠一层” */
+        .tiles-container .tile:hover {
+            transform: none;
+            box-shadow: 
+                0 8px 20px rgba(0,0,0,0.4),
+                0 0 20px rgba(255, 215, 0, 0.3),
+                inset 0 1px 0 rgba(255,255,255,0.9);
+            z-index: 10;
+        }
+
+        .tile.selected {
+            transform: translateY(-20px) rotateX(10deg) scale(1.15);
+            border-color: #ffc107;
+            box-shadow: 
+                0 10px 25px rgba(255, 193, 7, 0.6),
+                0 0 30px rgba(255, 193, 7, 0.4),
+                inset 0 1px 0 rgba(255,255,255,0.9);
+            z-index: 20;
+        }
+
+        .tile.gold {
+            border-color: #ffd700;
+            box-shadow: 
+                0 4px 12px rgba(255, 215, 0, 0.5),
+                0 0 20px rgba(255, 215, 0, 0.3),
+                inset 0 1px 0 rgba(255,255,255,0.9);
+            animation: goldGlow 2s ease-in-out infinite;
+        }
+
+        @keyframes goldGlow {
+            0%, 100% {
+                box-shadow: 
+                    0 4px 12px rgba(255, 215, 0, 0.5),
+                    0 0 20px rgba(255, 215, 0, 0.3),
+                    inset 0 1px 0 rgba(255,255,255,0.9);
+            }
+            50% {
+                box-shadow: 
+                    0 4px 12px rgba(255, 215, 0, 0.8),
+                    0 0 30px rgba(255, 215, 0, 0.6),
+                    inset 0 1px 0 rgba(255,255,255,0.9);
+            }
+        }
+
+        /* 发牌动画 */
+        .tile.dealing {
+            animation: dealCard 0.5s ease-out forwards;
+        }
+
+        @keyframes dealCard {
+            0% {
+                transform: translateX(-200px) rotateY(180deg) scale(0.5);
+                opacity: 0;
+            }
+            100% {
+                transform: translateX(0) rotateY(0deg) scale(1);
+                opacity: 1;
+            }
+        }
+
+        .my-hand {
+            background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+            padding: 25px;
+            border-radius: 15px;
+            margin-top: 20px;
+            border: 3px solid #4caf50;
+            box-shadow: 
+                0 4px 15px rgba(0,0,0,0.2),
+                inset 0 2px 5px rgba(255,255,255,0.5);
+        }
+
+        .discard-pile {
+            background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
+            padding: 20px;
+            border-radius: 15px;
+            margin: 20px 0;
+            min-height: 120px;
+            border: 2px solid #9e9e9e;
+            box-shadow: 
+                0 2px 10px rgba(0,0,0,0.15),
+                inset 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .status {
+            text-align: center;
+            padding: 15px;
+            background: #fff3cd;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        .flower-tiles {
+            display: flex;
+            gap: 5px;
+            margin-top: 10px;
+        }
+
+        .flower-tile {
+            width: 45px;
+            height: 63px;
+            background: linear-gradient(145deg, #ffebee 0%, #fce4ec 100%);
+            border: 2px solid #e57373;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .flower-tile img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 4px;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin: 20px 0;
+        }
+
+        .action-btn {
+            width: auto;
+            padding: 12px 30px;
+            font-size: 18px;
+        }
+
+        .info-tip {
+            background: #e3f2fd;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid #2196f3;
+            font-size: 14px;
+            color: #1976d2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🀄 福州麻将 🀄</h1>
+
+        <!-- 登录界面 -->
+        <div class="login-section active" id="loginSection">
+            <div class="form-group">
+                <label>玩家昵称：</label>
+                <input type="text" id="playerName" placeholder="请输入您的昵称" value="玩家1">
+            </div>
+            <div class="form-group">
+                <label>房间ID（可选，留空则创建新房间）：</label>
+                <input type="text" id="roomId" placeholder="留空创建新房间">
+            </div>
+            <button onclick="joinGame()">加入游戏</button>
+        </div>
+
+        <!-- 游戏界面 -->
+        <div class="game-section" id="gameSection">
+            <div class="info-tip">
+                💡 提示：游戏进度已自动保存，刷新页面后可以继续游戏
+            </div>
+            
+            <div class="info-panel">
+                <div class="info-row">
+                    <span>房间ID：</span>
+                    <strong id="displayRoomId">-</strong>
+                </div>
+                <div class="info-row">
+                    <span>金牌：</span>
+                    <strong id="goldTile" style="color: #d32f2f; font-size: 24px;">-</strong>
+                </div>
+                <div class="info-row">
+                    <span>剩余牌数：</span>
+                    <strong id="remainingTiles">-</strong>
+                </div>
+                <div class="info-row">
+                    <button onclick="exitGame()" style="background: linear-gradient(135deg, #f44336 0%, #e91e63 100%); padding: 8px 20px; width: auto;">
+                        退出游戏
+                    </button>
+                </div>
+            </div>
+
+            <div class="status" id="gameStatus">等待游戏开始...</div>
+
+            <!-- 方桌界面 -->
+            <div class="table-container" id="tableContainer">
+                <!-- 上方玩家（对家） -->
+                <div class="player-position player-top" id="playerTop" style="display: none;">
+                    <div class="player-info">
+                        <div class="player-name" id="playerTopName">-</div>
+                        <div class="player-stats">
+                            <span id="playerTopHandCount">0</span> 张手牌 | 
+                            <span id="playerTopFlowerCount">0</span> 张花牌
+                        </div>
+                    </div>
+                    <div class="player-hand" id="playerTopHand"></div>
+                    <div class="player-flowers" id="playerTopFlowers"></div>
+                    <div class="exposed-melds" id="playerTopMelds"></div>
+                </div>
+
+                <!-- 左侧玩家（上家） -->
+                <div class="player-position player-left" id="playerLeft" style="display: none;">
+                    <div class="player-info">
+                        <div class="player-name" id="playerLeftName">-</div>
+                        <div class="player-stats">
+                            <span id="playerLeftHandCount">0</span> 张 | 
+                            <span id="playerLeftFlowerCount">0</span> 花
+                        </div>
+                    </div>
+                    <div class="player-hand" id="playerLeftHand"></div>
+                    <div class="player-flowers" id="playerLeftFlowers"></div>
+                    <div class="exposed-melds" id="playerLeftMelds"></div>
+                </div>
+
+                <!-- 右侧玩家（下家） -->
+                <div class="player-position player-right" id="playerRight" style="display: none;">
+                    <div class="player-info">
+                        <div class="player-name" id="playerRightName">-</div>
+                        <div class="player-stats">
+                            <span id="playerRightHandCount">0</span> 张 | 
+                            <span id="playerRightFlowerCount">0</span> 花
+                        </div>
+                    </div>
+                    <div class="player-hand" id="playerRightHand"></div>
+                    <div class="player-flowers" id="playerRightFlowers"></div>
+                    <div class="exposed-melds" id="playerRightMelds"></div>
+                </div>
+
+                <!-- 下方玩家（自己） -->
+                <div class="player-position player-bottom" id="playerBottom" style="display: none;">
+                    <div class="player-info">
+                        <div class="player-name" id="playerBottomName">-</div>
+                        <div class="player-stats">
+                            <span id="playerBottomHandCount">0</span> 张手牌 | 
+                            <span id="playerBottomFlowerCount">0</span> 张花牌
+                        </div>
+                    </div>
+                    <div class="player-flowers" id="playerBottomFlowers"></div>
+                    <div class="exposed-melds" id="playerBottomMelds"></div>
+                </div>
+
+                <!-- 桌子中心（牌池） -->
+                <div class="table-center">
+                    <h3>牌池</h3>
+                    <div class="discard-pile-center" id="discardPileCenter"></div>
+                </div>
+            </div>
+
+            <!-- 我的手牌（底部独立显示） -->
+            <div class="my-hand">
+                <h3>我的手牌 <span id="myHandCount"></span></h3>
+                <div class="tiles-container" id="myHandTiles"></div>
+            </div>
+
+            <!-- 进张提示 -->
+            <div id="jinZhangPanel" style="display: none; background: #fff3cd; padding: 15px; border-radius: 10px; margin: 20px 0;">
+                <h3 style="margin-bottom: 10px;">📊 进张提示</h3>
+                <div id="jinZhangContent"></div>
+            </div>
+
+            <!-- 听牌提示（只显示能听哪些牌，金按万能牌已代入） -->
+            <div id="tingPanel" style="display: none; background: #eef7ff; padding: 12px 15px; border-radius: 10px; margin: 12px 0;">
+                <h3 style="margin-bottom: 8px;">听牌</h3>
+                <div id="tingContent" style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;"></div>
+            </div>
+
+            <!-- 操作按钮区域 -->
+            <div id="actionButtonsPanel" style="display: none; background: #e3f2fd; padding: 15px; border-radius: 10px; margin: 20px 0; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.3); min-width: 300px;">
+                <h3 style="margin-bottom: 10px;">🎯 可用操作</h3>
+                <div class="action-buttons" id="actionButtons">
+                    <!-- 动态生成操作按钮 -->
+                </div>
+            </div>
+
+            <div class="action-buttons" style="position: relative; z-index: 100;">
+                <button class="action-btn" onclick="discardSelected()" id="discardBtn">打出选中的牌</button>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <script src="tile-images.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
