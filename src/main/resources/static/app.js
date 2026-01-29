@@ -241,7 +241,7 @@ function updatePublicView(data) {
     }
     
     if (data.remainingTiles !== undefined) {
-        document.getElementById('remainingTiles').textContent = data.remainingTiles + ' 张';
+        document.getElementById('remainingTiles').textContent = data.remainingTiles;
     }
     
     if (data.phase) {
@@ -292,31 +292,31 @@ function updateGameStatus(data) {
     
     switch (data.phase) {
         case 'WAITING':
-            statusText = '等待玩家加入...';
+            statusText = 'Waiting for players to join...';
             break;
         case 'DEALING':
-            statusText = '发牌中...';
+            statusText = 'Dealing...';  
             break;
         case 'REPLACING_FLOWERS':
-            statusText = '补花中...';
+            statusText = 'Replacing flowers...';  
             break;
         case 'OPENING_GOLD':
-            statusText = '开金中...';
+            statusText = 'Opening gold...';  
             break;
         case 'PLAYING':
             if (data.players && data.currentPlayerIndex !== undefined) {
                 const currentPlayer = data.players[data.currentPlayerIndex];
                 if (currentPlayer) {
-                    statusText = '轮到 ' + currentPlayer.name + ' 出牌';
+                    statusText = 'It\'s [' + currentPlayer.name + '] turn';
                     
                     if (currentPlayer.id === currentPlayerId) {
-                        statusText = '轮到你出牌了！';
+                        statusText = 'It\'s YOUR TURN!';  
                     }
                 }
             }
             break;
         case 'FINISHED':
-            statusText = '游戏结束';
+            statusText = 'Game Over';    
             // 游戏结束后清除会话，避免下次自动恢复
             setTimeout(function() {
                 clearGameSession();
@@ -324,7 +324,7 @@ function updateGameStatus(data) {
             }, 3000);
             break;
         case 'CONFIRM_CONTINUE':
-            statusText = '等待确认是否继续对局...';
+            statusText = 'Waiting for confirmation to continue...'; 
             break;
     }
     
@@ -361,14 +361,14 @@ function ensureContinuePromptUI() {
     container.innerHTML = `
         <div style="font-size:18px;font-weight:800;margin-bottom:10px;color:#333;">轮庄一圈</div>
         <div id="continuePromptText" style="font-size:14px;color:#555;margin-bottom:14px;line-height:1.4;">
-            是否继续对局？
+            Do you want to continue the game?
         </div>
         <div style="display:flex;gap:10px;justify-content:center;">
-            <button id="btnContinueYes" class="action-btn" style="background:linear-gradient(135deg,#4caf50 0%,#45a049 100%);">继续</button>
-            <button id="btnContinueNo" class="action-btn" style="background:linear-gradient(135deg,#f44336 0%,#d32f2f 100%);">结束</button>
+            <button id="btnContinueYes" class="action-btn" style="background:linear-gradient(135deg,#4caf50 0%,#45a049 100%);">Continue</button>
+            <button id="btnContinueNo" class="action-btn" style="background:linear-gradient(135deg,#f44336 0%,#d32f2f 100%);">End</button>
         </div>
         <div id="continuePromptWaiting" style="display:none;margin-top:12px;font-size:13px;color:#666;text-align:center;">
-            已提交，等待其他玩家…
+            Submitted, waiting for other players...
         </div>
     `;
     document.body.appendChild(container);
@@ -415,7 +415,7 @@ function handleContinuePrompt(data) {
         if (decisions[k] !== null && decisions[k] !== undefined) decidedCount++;
     });
     if (text) {
-        text.textContent = `是否继续对局？（${decidedCount}/${total} 已确认）`;
+        text.textContent = `Do you want to continue the game? (${decidedCount}/${total} confirmed)`;
     }
 
     if (myDecision === null || myDecision === undefined) {
@@ -503,7 +503,7 @@ function updatePlayerPosition(position, player, isActive) {
         // 名字旁展示连庄数（仅庄家显示；下庄清0）
         const streak = player.dealerStreak || 0;
         if (player.isDealer && streak > 0) {
-            nameElement.textContent = `${player.name} 连庄${streak}`;
+            nameElement.textContent = `${player.name} Dealer ${streak}`;
         } else {
             nameElement.textContent = player.name;
         }
@@ -606,18 +606,42 @@ function updateMyHand(tiles) {
     const countSpan = document.getElementById('myHandCount');
     
     container.innerHTML = '';
-    countSpan.textContent = `(${tiles.length} 张)`;
+    countSpan.textContent = `(${tiles.length})`;
     
-    // 后端已经排序好了：金牌在最左，其他牌按正常顺序
-    // 新摸的牌会在最右边（因为后端摸牌后不立即排序，出牌后才排序）
-    // 所以前端直接按照后端返回的顺序显示即可，不要重新排序
+    // 期望行为：
+    // - 新摸进来的那一张（包括杠后补牌）始终在最右侧
+    // - 这张牌像金牌一样有特殊标识（高蓝色边框）
+    //
+    // 后端通常会处理排序，但部分情况下（如杠后补牌）可能会把新牌插入到中间。
+    // 这里以前端展示为准：根据 gameState.lastDrawnTile.id 把“新牌”挪到最右侧。
+    const displayedTiles = Array.isArray(tiles) ? tiles.slice() : [];
+    const lastDrawnTile = gameState && gameState.lastDrawnTile ? gameState.lastDrawnTile : null;
+    const myIndex = gameState && Array.isArray(gameState.players)
+        ? gameState.players.findIndex(p => p && p.id === currentPlayerId)
+        : -1;
+    const isMyLastDraw = !!(lastDrawnTile && myIndex >= 0 && gameState.lastDrawPlayerIndex === myIndex);
+    const lastDrawnId = isMyLastDraw && lastDrawnTile && lastDrawnTile.id ? lastDrawnTile.id : null;
+    const isGoldTile = (t) => !!(gameState && gameState.goldTile && t &&
+        t.type === gameState.goldTile.type && t.value === gameState.goldTile.value);
+
+    if (lastDrawnId) {
+        const idx = displayedTiles.findIndex(t => t && t.id === lastDrawnId);
+        if (idx >= 0 && idx !== displayedTiles.length - 1) {
+            const t = displayedTiles[idx];
+            // 金牌维持最左侧展示逻辑（不强制挪到最右），但依然可以有“新摸牌”蓝框
+            if (!isGoldTile(t)) {
+                displayedTiles.splice(idx, 1);
+                displayedTiles.push(t);
+            }
+        }
+    }
     
     // 检查是否有暗杠选项
     const anGangTiles = gameState && gameState.availableActions && 
         gameState.availableActions.anGangTiles ? 
         gameState.availableActions.anGangTiles : [];
     
-    tiles.forEach((tile, index) => {
+    displayedTiles.forEach((tile, index) => {
         const tileWrapper = document.createElement('div');
         tileWrapper.style.position = 'relative';
         tileWrapper.style.display = 'inline-block';
@@ -626,10 +650,13 @@ function updateMyHand(tiles) {
         tileDiv.className = 'tile dealing';
         tileDiv.style.animationDelay = `${index * 0.05}s`;
         
-        if (gameState && gameState.goldTile && 
-            tile.type === gameState.goldTile.type && 
-            tile.value === gameState.goldTile.value) {
+        if (isGoldTile(tile)) {
             tileDiv.classList.add('gold');
+        }
+        
+        // 刚摸进来的那张：高蓝色边框（像金一样的特殊标识）
+        if (lastDrawnId && tile && tile.id === lastDrawnId) {
+            tileDiv.classList.add('just-drawn');
         }
         
         // 检查是否可以暗杠
@@ -913,11 +940,14 @@ function updateAvailableActions(actions) {
     
     // 检查摸牌后可以进行的操作（自摸、暗杠、三金倒）
     const canSelfAction = actions.canHu || actions.canAnGang || actions.canSanJinDao;
-    const isDrawAction = gameState && gameState.currentActionType === 'drawAction' && 
-                         gameState.currentActionPlayerId === currentPlayerId;
+    // 后端在“别人出牌后”的判定中会下发 discardedTile 字段；
+    // 摸牌后的自摸/暗杠/三金倒场景，不会带 discardedTile。
+    const fromDiscard = !!actions.discardedTile;
     
-    // 如果是摸牌后的操作选择（自摸、暗杠、三金倒）
-    if (isDrawAction && canSelfAction) {
+    // 如果是摸牌后的操作选择（自摸、暗杠、三金倒）：
+    // 仅依赖“有自操作 & 当前不是吃碰杠胡（无 discardedTile）”来判断，
+    // 避免 currentActionType / currentActionPlayerId 状态异常导致前端不弹窗。
+    if (canSelfAction && !fromDiscard && actionButtonsPanel && actionButtons) {
         actionButtonsPanel.style.display = 'block';
         actionButtons.innerHTML = '';
         
@@ -927,7 +957,7 @@ function updateAvailableActions(actions) {
         tipDiv.style.fontSize = '18px';
         tipDiv.style.fontWeight = 'bold';
         tipDiv.style.color = '#1976d2';
-        tipDiv.textContent = '摸牌后可以选择：';
+        tipDiv.textContent = '';
         actionButtons.appendChild(tipDiv);
         
         // 三金倒按钮（优先级最高）
@@ -1020,12 +1050,16 @@ function updateAvailableActions(actions) {
         actionButtons.appendChild(passBtn);
         
         // 隐藏进张提示面板
-        jinZhangPanel.style.display = 'none';
+        if (jinZhangPanel) {
+            jinZhangPanel.style.display = 'none';
+        }
         return;
     }
     
     // 摸牌后不显示进张提示，隐藏进张提示面板
-    jinZhangPanel.style.display = 'none';
+    if (jinZhangPanel) {
+        jinZhangPanel.style.display = 'none';
+    }
 
     // 听牌提示：只显示能听哪些牌（后端已按“金万能”代入计算）
     if (tingPanel && tingContent) {

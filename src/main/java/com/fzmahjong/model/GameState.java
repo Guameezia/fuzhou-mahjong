@@ -27,6 +27,12 @@ public class GameState {
     private String currentActionPlayerId;        // 当前应该执行操作的玩家ID（按优先级）
     private String currentActionType;            // 当前优先级操作类型（"hu", "gang", "peng", "chi"）
 
+    // === 抢金/开局相关状态 ===
+    private boolean qiangJinWindowActive;        // 庄家首打后到庄家首次再摸牌前：抢金窗口有效
+    private Tile lastDrawnTile;                  // 最近一次摸到/补到的最终有效牌（非花）
+    private int lastDrawPlayerIndex;             // 最近一次摸牌的玩家索引
+    private int lastDrawValidHandCountBefore;    // 最近一次摸牌前，该玩家“暗牌（不含花）”张数
+
     public GameState(String roomId) {
         this.roomId = roomId;
         this.players = new ArrayList<>();
@@ -42,6 +48,10 @@ public class GameState {
         this.availableActions = new HashMap<>();
         this.currentActionPlayerId = null;
         this.currentActionType = null;
+        this.qiangJinWindowActive = false;
+        this.lastDrawnTile = null;
+        this.lastDrawPlayerIndex = -1;
+        this.lastDrawValidHandCountBefore = -1;
     }
 
     public String getRoomId() {
@@ -308,5 +318,37 @@ public class GameState {
 
     public void setCurrentActionType(String currentActionType) {
         this.currentActionType = currentActionType;
+    }
+
+    public boolean isQiangJinWindowActive() {
+        return qiangJinWindowActive;
+    }
+
+    public void setQiangJinWindowActive(boolean qiangJinWindowActive) {
+        this.qiangJinWindowActive = qiangJinWindowActive;
+    }
+
+    public Tile getLastDrawnTile() {
+        return lastDrawnTile;
+    }
+
+    public void setLastDrawnTile(Tile lastDrawnTile) {
+        this.lastDrawnTile = lastDrawnTile;
+    }
+
+    public int getLastDrawPlayerIndex() {
+        return lastDrawPlayerIndex;
+    }
+
+    public void setLastDrawPlayerIndex(int lastDrawPlayerIndex) {
+        this.lastDrawPlayerIndex = lastDrawPlayerIndex;
+    }
+
+    public int getLastDrawValidHandCountBefore() {
+        return lastDrawValidHandCountBefore;
+    }
+
+    public void setLastDrawValidHandCountBefore(int lastDrawValidHandCountBefore) {
+        this.lastDrawValidHandCountBefore = lastDrawValidHandCountBefore;
     }
 }

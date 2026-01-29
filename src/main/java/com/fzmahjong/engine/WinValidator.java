@@ -17,9 +17,11 @@ public class WinValidator {
      * 检查是否可以和牌
      * 福州麻将和牌规则：
      * 1. 平和：标准麻将胡牌形式（n个顺子/刻子 + 1对将）
-     * 2. 三头金：手里有3张金
-     * 3. 抢金：开金后抓到金就和（不看具体牌型）
-     * 4. 金将 / 金雀 / 金作面子：金牌视作“万能牌（癞子）”，可补任意牌
+     * 2. 金将：2张金做将，其他组成面子
+     * 3. 金雀：1张金做将，其他组成面子
+     * 4. 金作面子：金牌视作“万能牌（癞子）”，可补任意牌   
+     * 5. 抢金：开金后抓到金就和
+     * 6. 三头金：手里有3张金
      */
     public static boolean canWin(List<Tile> handTiles, Tile goldTile, boolean isQiangJin) {
         if (handTiles == null || handTiles.isEmpty()) {
@@ -39,17 +41,18 @@ public class WinValidator {
             return false;
         }
 
-        // 抢金判断（开金阶段抓到金）
-        if (isQiangJin) {
-            return true;
-        }
-
         // 统计金牌数量（使用过滤后的牌）
         int goldCount = countGoldTiles(validTiles, goldTile);
 
         // 三头金（3张金）
         if (goldCount >= 3) {
-            log.info("三头金！");
+            log.info("三金倒！");
+            return true;
+        }
+
+        // 抢金判断（开金后：满足“16 张时进一张金即可和”）
+        // 注意：三头金优先级更高，因此必须在三头金之后判断
+        if (isQiangJin) {
             return true;
         }
 

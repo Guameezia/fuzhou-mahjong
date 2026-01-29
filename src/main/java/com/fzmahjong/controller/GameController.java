@@ -415,6 +415,10 @@ public class GameController {
         view.put("dealerChangesSinceCycleStart", gameState.getDealerChangesSinceCycleStart());
         view.put("continueDecisions", gameState.getContinueDecisions());
         view.put("goldTile", gameState.getGoldTile());
+        // 最近一次摸到/补到的最终有效牌（非花）及其相关信息
+        view.put("lastDrawnTile", gameState.getLastDrawnTile());
+        view.put("lastDrawPlayerIndex", gameState.getLastDrawPlayerIndex());
+        view.put("lastDrawValidHandCountBefore", gameState.getLastDrawValidHandCountBefore());
         view.put("lastDiscardedTile", gameState.getLastDiscardedTile());
         view.put("discardedTiles", gameState.getDiscardedTiles());
         view.put("remainingTiles", gameState.getWallTiles().size());

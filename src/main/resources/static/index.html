@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>福州麻将</title>
+    <title>FZMahjong</title>
     <style>
         * {
             margin: 0;
@@ -672,6 +672,23 @@
             animation: goldGlow 2s ease-in-out infinite;
         }
 
+        /* 刚摸进来的那张牌：用“状态蓝”标识（与玩家轮到的蓝框一致）
+           注意：边框 borderColor 可能被 JS 的内联样式覆盖（例如可暗杠时变紫），
+           所以这里用 outline 来保证可见性。 */
+        .tile.just-drawn {
+            outline: 2px solid rgba(102, 126, 234, 0.9); /* #667eea，紧贴牌边缘 */
+            outline-offset: 0; /* 不向外扩张，避免遮挡相邻牌 */
+            box-shadow:
+                0 4px 12px rgba(102, 126, 234, 0.35),
+                0 0 16px rgba(102, 126, 234, 0.25),
+                inset 0 1px 0 rgba(255,255,255,0.9);
+        }
+
+        /* 如果同时是金牌 + 刚摸进来的那张：两种效果叠加（避免被 gold 动画完全盖掉） */
+        .tile.gold.just-drawn {
+            outline-color: rgba(0, 163, 255, 0.9);
+        }
+
         @keyframes goldGlow {
             0%, 100% {
                 box-shadow: 
@@ -790,48 +807,48 @@
 </head>
 <body>
     <div class="container">
-        <h1>🀄 福州麻将 🀄</h1>
+        <h1>🀄 FZMahjong 🀄</h1>
 
         <!-- 登录界面 -->
         <div class="login-section active" id="loginSection">
             <div class="form-group">
-                <label>玩家昵称：</label>
-                <input type="text" id="playerName" placeholder="请输入您的昵称" value="玩家1">
+                <label>Nickname: </label>
+                <input type="text" id="playerName" placeholder="Enter your nickname" value="Player1">
             </div>
             <div class="form-group">
-                <label>房间ID（可选，留空则创建新房间）：</label>
-                <input type="text" id="roomId" placeholder="留空创建新房间">
+                <label>RoomID (Optional, leave empty to create a new room): </label>
+                <input type="text" id="roomId" placeholder="Leave empty to create a new room">
             </div>
-            <button onclick="joinGame()">加入游戏</button>
+            <button onclick="joinGame()">Join Game</button>
         </div>
 
         <!-- 游戏界面 -->
         <div class="game-section" id="gameSection">
             <div class="info-tip">
-                💡 提示：游戏进度已自动保存，刷新页面后可以继续游戏
+                💡 Tip: Game progress is automatically saved. Refresh the page to continue the game.
             </div>
             
             <div class="info-panel">
                 <div class="info-row">
-                    <span>房间ID：</span>
+                    <span>RoomID: </span>
                     <strong id="displayRoomId">-</strong>
                 </div>
                 <div class="info-row">
-                    <span>金牌：</span>
-                    <strong id="goldTile" style="color: #d32f2f; font-size: 24px;">-</strong>
+                    <span>Gold: </span>
+                    <strong id="goldTile" style="color: #d32f2f; ">-</strong>
                 </div>
                 <div class="info-row">
-                    <span>剩余牌数：</span>
-                    <strong id="remainingTiles">-</strong>
+                    <span>Remaining Tiles: </span>
+                    <span id="remainingTiles">-</span>
                 </div>
                 <div class="info-row">
                     <button onclick="exitGame()" style="background: linear-gradient(135deg, #f44336 0%, #e91e63 100%); padding: 8px 20px; width: auto;">
-                        退出游戏
+                        Exit Game
                     </button>
                 </div>
             </div>
 
-            <div class="status" id="gameStatus">等待游戏开始...</div>
+                <div class="status" id="gameStatus">Waiting for game to start...</div>
 
             <!-- 方桌界面 -->
             <div class="table-container" id="tableContainer">
@@ -840,8 +857,8 @@
                     <div class="player-info">
                         <div class="player-name" id="playerTopName">-</div>
                         <div class="player-stats">
-                            <span id="playerTopHandCount">0</span> 张手牌 | 
-                            <span id="playerTopFlowerCount">0</span> 张花牌
+                            <span id="playerTopHandCount">0</span> Tiles | 
+                            <span id="playerTopFlowerCount">0</span> Flowers
                         </div>
                     </div>
                     <div class="player-hand" id="playerTopHand"></div>
@@ -854,8 +871,8 @@
                     <div class="player-info">
                         <div class="player-name" id="playerLeftName">-</div>
                         <div class="player-stats">
-                            <span id="playerLeftHandCount">0</span> 张 | 
-                            <span id="playerLeftFlowerCount">0</span> 花
+                            <span id="playerLeftHandCount">0</span> Tiles | 
+                            <span id="playerLeftFlowerCount">0</span> Flowers
                         </div>
                     </div>
                     <div class="player-hand" id="playerLeftHand"></div>
@@ -868,8 +885,8 @@
                     <div class="player-info">
                         <div class="player-name" id="playerRightName">-</div>
                         <div class="player-stats">
-                            <span id="playerRightHandCount">0</span> 张 | 
-                            <span id="playerRightFlowerCount">0</span> 花
+                            <span id="playerRightHandCount">0</span> Tiles | 
+                            <span id="playerRightFlowerCount">0</span> Flowers
                         </div>
                     </div>
                     <div class="player-hand" id="playerRightHand"></div>
@@ -882,8 +899,8 @@
                     <div class="player-info">
                         <div class="player-name" id="playerBottomName">-</div>
                         <div class="player-stats">
-                            <span id="playerBottomHandCount">0</span> 张手牌 | 
-                            <span id="playerBottomFlowerCount">0</span> 张花牌
+                            <span id="playerBottomHandCount">0</span> Tiles | 
+                            <span id="playerBottomFlowerCount">0</span> Flowers
                         </div>
                     </div>
                     <div class="player-flowers" id="playerBottomFlowers"></div>
@@ -892,39 +909,34 @@
 
                 <!-- 桌子中心（牌池） -->
                 <div class="table-center">
-                    <h3>牌池</h3>
+                    <h3>💰</h3>
                     <div class="discard-pile-center" id="discardPileCenter"></div>
                 </div>
             </div>
 
             <!-- 我的手牌（底部独立显示） -->
             <div class="my-hand">
-                <h3>我的手牌 <span id="myHandCount"></span></h3>
+                <h3>🤲 <span id="myHandCount"></span></h3>
                 <div class="tiles-container" id="myHandTiles"></div>
             </div>
 
-            <!-- 进张提示 -->
-            <div id="jinZhangPanel" style="display: none; background: #fff3cd; padding: 15px; border-radius: 10px; margin: 20px 0;">
-                <h3 style="margin-bottom: 10px;">📊 进张提示</h3>
-                <div id="jinZhangContent"></div>
-            </div>
 
             <!-- 听牌提示（只显示能听哪些牌，金按万能牌已代入） -->
             <div id="tingPanel" style="display: none; background: #eef7ff; padding: 12px 15px; border-radius: 10px; margin: 12px 0;">
-                <h3 style="margin-bottom: 8px;">听牌</h3>
+                <h3 style="margin-bottom: 8px;">👂 </h3>
                 <div id="tingContent" style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;"></div>
             </div>
 
             <!-- 操作按钮区域 -->
             <div id="actionButtonsPanel" style="display: none; background: #e3f2fd; padding: 15px; border-radius: 10px; margin: 20px 0; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.3); min-width: 300px;">
-                <h3 style="margin-bottom: 10px;">🎯 可用操作</h3>
+                <h3 style="margin-bottom: 10px;"> 🎯 </h3>
                 <div class="action-buttons" id="actionButtons">
                     <!-- 动态生成操作按钮 -->
                 </div>
             </div>
 
             <div class="action-buttons" style="position: relative; z-index: 100;">
-                <button class="action-btn" onclick="discardSelected()" id="discardBtn">打出选中的牌</button>
+                <button class="action-btn" onclick="discardSelected()" id="discardBtn">🤞</button>
             </div>
 
         </div>

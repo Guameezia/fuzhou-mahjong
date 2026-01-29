@@ -94,6 +94,18 @@ public class GameEngine {
         gameState.setPhase(GamePhase.PLAYING);
         gameState.setCurrentPlayerIndex(gameState.getDealerIndex());
 
+        // 开局阶段：庄家在首打前可判断“天胡/三金倒”
+        // 三金倒优先级 > 天胡（最终以 WinValidator 的顺序保证）
+        // 同时，重置抢金窗口（必须等庄家首打后才开启）
+        gameState.setQiangJinWindowActive(false);
+        gameState.setLastDrawnTile(null);
+        gameState.setLastDrawPlayerIndex(-1);
+        gameState.setLastDrawValidHandCountBefore(-1);
+        Player dealer = gameState.getDealer();
+        if (dealer != null) {
+            checkAvailableActionsAfterDraw(dealer);
+        }
+
         log.info("开局完成，庄家是：{}", gameState.getDealer().getName());
         log.info("金牌是：{}", gameState.getGoldTile());
         log.info("开始对局，当前玩家：{}", gameState.getCurrentPlayer().getName());
@@ -268,6 +280,16 @@ public class GameEngine {
             return true; // 需要广播新状态（确认继续/下一局）
         }
         
+        // 记录摸牌前的“暗牌（不含花）”张数，用于抢金判定
+        int validHandCountBefore = 0;
+        for (Tile t : player.getHandTiles()) {
+            if (t != null && t.getType() != TileType.FLOWER) {
+                validHandCountBefore++;
+            }
+        }
+        gameState.setLastDrawValidHandCountBefore(validHandCountBefore);
+        gameState.setLastDrawPlayerIndex(player.getPosition());
+
         Tile tile = gameState.drawTile();
         if (tile != null) {
             player.addTile(tile);
@@ -290,6 +312,9 @@ public class GameEngine {
                 player.addTile(tile);
                 log.debug("玩家 {} 从牌尾补花摸到：{}", player.getName(), tile);
             }
+
+            // 记录最终有效进张（非花），用于抢金/自摸判定
+            gameState.setLastDrawnTile(tile);
             
             // 检查进张（可以吃、碰、杠、胡的牌）
             checkAvailableActionsAfterDraw(player);
@@ -344,6 +369,11 @@ public class GameEngine {
         gameState.setLastDiscardedTile(tileToDiscard);
         gameState.setLastDiscardPlayerIndex(player.getPosition());
         gameState.getDiscardedTiles().add(tileToDiscard);
+
+        // 抢金窗口：庄家首打之后开启；直到庄家首次再摸牌（见 playerDraw）后关闭
+        if (player.getPosition() == gameState.getDealerIndex() && gameState.getDiscardedTiles().size() == 1) {
+            gameState.setQiangJinWindowActive(true);
+        }
         
         // 出牌后重新排序手牌（金牌排在最左边）
         player.sortHand(gameState.getGoldTile());
@@ -385,7 +415,8 @@ public class GameEngine {
         // 摸牌后只判断：暗杠 / 自摸 / 三金倒（吃碰杠只在别人出牌时判断）
         List<Tile> anGangTiles = ActionChecker.canAnGang(player);
         boolean canAnGang = anGangTiles != null && !anGangTiles.isEmpty();
-        boolean canHu = ActionChecker.canHu(player, null, goldTile, false);
+        boolean isQiangJin = isQiangJinForCurrentDraw(player, goldTile);
+        boolean canHu = ActionChecker.canHu(player, null, goldTile, isQiangJin);
 
         boolean canSanJinDao = false;
         if (goldTile != null) {
@@ -425,6 +456,37 @@ public class GameEngine {
             canAnGang,
             canHu,
             canSanJinDao);
+
+        // 庄家首次再摸牌后，关闭抢金窗口（本局只开放这一轮的抢金）
+        if (gameState.isQiangJinWindowActive() && player.getPosition() == gameState.getDealerIndex()) {
+            gameState.setQiangJinWindowActive(false);
+        }
+    }
+
+    /**
+     * 抢金判定（本项目约定）：
+     * - 在庄家首打之后开启抢金窗口；
+     * - 任意玩家在“暗牌 16 张（不含花）”时进张，若进的是金牌，则可直接胡（抢金）；
+     * - 三金倒优先级更高，由 WinValidator 保证最终裁决顺序。
+     */
+    private boolean isQiangJinForCurrentDraw(Player player, Tile goldTile) {
+        if (player == null || goldTile == null) {
+            return false;
+        }
+        if (!gameState.isQiangJinWindowActive()) {
+            return false;
+        }
+        if (gameState.getLastDrawPlayerIndex() != player.getPosition()) {
+            return false;
+        }
+        Tile lastDrawn = gameState.getLastDrawnTile();
+        if (lastDrawn == null || lastDrawn.getType() == TileType.FLOWER) {
+            return false;
+        }
+        if (!lastDrawn.isSameAs(goldTile)) {
+            return false;
+        }
+        return gameState.getLastDrawValidHandCountBefore() == 16;
     }
     
     /**
@@ -786,6 +848,14 @@ public class GameEngine {
         if (gameState.hasRemainingTiles()) {
             Tile tile = gameState.drawTileFromTail();
             if (tile != null) {
+                // 记录“杠后进张”的摸牌信息，供前端高亮与抢金等逻辑使用
+                gameState.setLastDrawValidHandCountBefore(
+                    (int) player.getHandTiles().stream()
+                        .filter(t -> t != null && t.getType() != TileType.FLOWER)
+                        .count()
+                );
+                gameState.setLastDrawPlayerIndex(player.getPosition());
+
                 player.addTile(tile);
                 log.info("玩家 {} 杠后从牌尾摸牌：{}", player.getName(), tile);
                 
@@ -805,11 +875,15 @@ public class GameEngine {
                     log.debug("玩家 {} 杠后从牌尾补花摸到：{}", player.getName(), tile);
                 }
                 
+                // 记录最终有效进张（非花），用于前端“新牌高亮”以及抢金等判定
+                gameState.setLastDrawnTile(tile);
+
                 // 检查进张（可以吃、碰、杠、胡的牌）
                 checkAvailableActionsAfterDraw(player);
-                
-                // 排序手牌（金牌排在最左边）
-                player.sortHand(gameState.getGoldTile());
+
+                // 杠后摸牌的展示与普通摸牌保持一致：
+                // 不在这里立即排序，保留“新摸牌在最右侧”的前端表现
+                // player.sortHand(gameState.getGoldTile());
             }
         }
         
@@ -866,13 +940,25 @@ public class GameEngine {
         gameState.clearAllActions();
         gameState.setCurrentActionPlayerId(null);
         gameState.setCurrentActionType(null);
-        
+
+        // 暗杠属于“本轮出牌玩家”的操作，暗杠后依然应该轮到该玩家继续行动（补牌再出牌），
+        // 因此需要显式将当前行动玩家索引指向暗杠玩家，避免仍停留在上一个出牌者身上。
+        gameState.setCurrentPlayerIndex(player.getPosition());
+
         log.info("玩家 {} 暗杠：{}", player.getName(), matchingTiles);
         
         // 暗杠后从牌尾摸牌
         if (gameState.hasRemainingTiles()) {
             Tile drawnTile = gameState.drawTileFromTail();
             if (drawnTile != null) {
+                // 记录“暗杠后进张”的摸牌信息，供前端高亮与抢金等逻辑使用
+                gameState.setLastDrawValidHandCountBefore(
+                    (int) player.getHandTiles().stream()
+                        .filter(t -> t != null && t.getType() != TileType.FLOWER)
+                        .count()
+                );
+                gameState.setLastDrawPlayerIndex(player.getPosition());
+
                 player.addTile(drawnTile);
                 log.info("玩家 {} 暗杠后从牌尾摸牌：{}", player.getName(), drawnTile);
                 
@@ -892,11 +978,15 @@ public class GameEngine {
                     log.debug("玩家 {} 暗杠后从牌尾补花摸到：{}", player.getName(), drawnTile);
                 }
                 
+                // 记录最终有效进张（非花），用于前端“新牌高亮”以及抢金等判定
+                gameState.setLastDrawnTile(drawnTile);
+
                 // 检查进张（可以吃、碰、杠、胡的牌）
                 checkAvailableActionsAfterDraw(player);
-                
-                // 排序手牌（金牌排在最左边）
-                player.sortHand(gameState.getGoldTile());
+
+                // 暗杠后摸牌的展示与普通摸牌保持一致：
+                // 不在这里立即排序，保留“新摸牌在最右侧”的前端表现
+                // player.sortHand(gameState.getGoldTile());
             }
         }
         
@@ -914,28 +1004,41 @@ public class GameEngine {
         }
 
         // 区分自摸与点炮：
-        // - 自摸：使用当前手牌直接判断胡牌，不额外加任何牌
-        // - 点炮：把别人打出的那张牌临时加入，再判断胡牌
+        // - 自摸：当前处于摸牌后的“自摸/暗杠/三金倒”选择窗口（drawAction），
+        //         或逻辑上没有最近弃牌可依赖，此时使用当前手牌直接判断胡牌；
+        // - 点炮：当前是针对最近弃牌的“胡”操作，需要把别人打出的那张牌临时加入再判断胡牌。
         Tile discardedTile = gameState.getLastDiscardedTile();
         int lastDiscardPlayerIndex = gameState.getLastDiscardPlayerIndex();
 
         Tile tileForHuCheck = null;
         boolean isZiMo;
 
-        if (discardedTile == null) {
-            // 没有最近弃牌，一定是自摸
+        // 1）如果当前操作类型就是摸牌后的 drawAction，并且当前操作玩家是自己，
+        //    明确视为“自摸”，不要再把最近弃牌当作点炮牌使用
+        boolean isDrawActionForSelf =
+            "drawAction".equals(gameState.getCurrentActionType()) &&
+            playerId.equals(gameState.getCurrentActionPlayerId());
+
+        if (isDrawActionForSelf) {
+            isZiMo = true;
+        } else if (discardedTile == null) {
+            // 2）兜底：没有最近弃牌，也只能按自摸处理
             isZiMo = true;
         } else if (lastDiscardPlayerIndex == player.getPosition()) {
-            // 保护性判断：最近弃牌来自自己，也按自摸处理（理论上不该出现）
+            // 3）保护性兜底：最近弃牌来自自己（理论上不该出现），也按自摸处理
             isZiMo = true;
         } else {
-            // 最近弃牌来自其他玩家，这是点炮
+            // 4）最近弃牌来自其他玩家，且当前并非摸牌后的自摸窗口，这是点炮
             isZiMo = false;
             tileForHuCheck = discardedTile;
         }
 
+        boolean isQiangJin = false;
+        if (isZiMo) {
+            isQiangJin = isQiangJinForCurrentDraw(player, gameState.getGoldTile());
+        }
         boolean canHu = ActionChecker.canHu(player, tileForHuCheck,
-            gameState.getGoldTile(), false);
+            gameState.getGoldTile(), isQiangJin);
         
         if (!canHu) {
             log.warn("玩家 {} 不能胡牌（类型={}，最近弃牌={}，弃牌玩家索引={}）",

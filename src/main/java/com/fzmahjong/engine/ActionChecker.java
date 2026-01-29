@@ -167,8 +167,11 @@ public class ActionChecker {
             }
         }
 
-        // N 必须满足 N % 3 == 1（例如 16、13、10、7、4、1），才可能“再进一张就胡”
-        if (baseTiles.isEmpty() || baseTiles.size() > 16 || (baseTiles.size() % 3) != 1) {
+        // 这里不再强行限制 N % 3 == 1，
+        // 而是直接枚举“再进一张牌”后能胡的所有候选：
+        // - WinValidator 本身会根据 3n+2 结构和金牌规则做最终裁决；
+        // - 这样可以避免因为张数过滤过严而漏掉某些听牌（例如吃碰杠后特殊牌型）。
+        if (baseTiles.isEmpty() || baseTiles.size() > 17) {
             return Collections.emptyList();
         }
 
@@ -178,8 +181,21 @@ public class ActionChecker {
         for (Tile candidate : candidates) {
             List<Tile> test = new ArrayList<>(baseTiles);
             // 这里 candidate 的 id 无关紧要；WinValidator 判断只看 type/value
-            test.add(new Tile(candidate.getType(), candidate.getValue(), candidate.getType().name() + "_" + candidate.getValue()));
-            if (WinValidator.canWin(test, goldTile, false)) {
+            test.add(new Tile(candidate.getType(), candidate.getValue(),
+                    candidate.getType().name() + "_" + candidate.getValue()));
+
+            boolean canWinNormal = WinValidator.canWin(test, goldTile, false);
+
+            // 抢金听牌：16 张暗牌时，摸到金牌可以“抢金和牌”，需要用 isQiangJin=true 再判一次。
+            boolean canWinQiangJin = false;
+            if (!canWinNormal
+                    && goldTile != null
+                    && candidate.isSameAs(goldTile)
+                    && baseTiles.size() == 16) {
+                canWinQiangJin = WinValidator.canWin(test, goldTile, true);
+            }
+
+            if (canWinNormal || canWinQiangJin) {
                 tingTiles.add(candidate);
             }
         }
