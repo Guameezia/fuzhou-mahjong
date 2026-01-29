@@ -569,4 +569,14 @@ public class GameController {
         public boolean isContinue() { return isContinue; }
         public void setContinue(boolean aContinue) { isContinue = aContinue; }
     }
+
+    public static class SetTestHandRequest {
+        private String roomId;
+        private List<String> tiles;
+
+        public String getRoomId() { return roomId; }
+        public void setRoomId(String roomId) { this.roomId = roomId; }
+        public List<String> getTiles() { return tiles; }
+        public void setTiles(List<String> tiles) { this.tiles = tiles; }
+    }
 }
