@@ -342,7 +342,15 @@ public class GameController {
 
         boolean success = engine.playerContinue(request.getPlayerId(), request.isContinue());
         if (success) {
-            broadcastGameState(roomId, engine.getGameState());
+            GameState state = engine.getGameState();
+            broadcastGameState(roomId, state);
+
+            // 如果对局阶段已经被置为 FINISHED，说明已有玩家选择“End”，
+            // 此时直接解散房间，后续该房间将不再接收任何请求。
+            if (state.getPhase() == com.fzmahjong.model.GamePhase.FINISHED) {
+                roomManager.destroyRoom(roomId);
+                log.info("收到 End 选择后，已解散房间 {}", roomId);
+            }
         }
     }
 

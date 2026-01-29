@@ -166,35 +166,79 @@ public class WinValidator {
         }
 
         // 尝试二：如果是万/条/饼，再尝试顺子 ABC（可以用金补）
-        if (isShunziType(type) && value <= 7) {
-            int have0 = counts[type][value];
-            int have1 = counts[type][value + 1];
-            int have2 = counts[type][value + 2];
+        //
+        // 这里需要特别考虑一种情况：
+        //   实际最小的那张牌是 8条，但牌型想要的是 7-8-9 条，其中 7 条由金牌代替。
+        //   旧逻辑只从 (v, v+1, v+2) 这种“以当前最小牌为首”的顺子出发，
+        //   因为没有真实的 7 条，就永远不会尝试 7-8-9 这种“缺最小一张、用金补”的顺子，
+        //   导致进张（听牌）时漏掉了一些依赖“左补金”的顺子形态。
+        //
+        // 为了覆盖所有可能的顺子组合，并且仍然保持“每次递归都会消耗当前最小牌”以保证收敛，
+        // 我们对当前最小牌 (type, value) 同时尝试三种顺子形态：
+        //   1. [value,   value+1, value+2]  —— 当前牌作为首张（原有逻辑）
+        //   2. [value-1, value,   value+1]  —— 当前牌作为中张
+        //   3. [value-2, value-1, value]    —— 当前牌作为末张
+        //
+        // 这三种形态都包含当前最小牌本身，因此不会破坏 DFS 的有序性和终止性。
+        if (isShunziType(type)) {
+            // 三种候选形态的起始点与偏移
+            int[][] patterns = new int[][]{
+                    // 当前值作为首张：value, value+1, value+2
+                    {value, 0},
+                    // 当前值作为中张：value-1, value, value+1
+                    {value - 1, 0},
+                    // 当前值作为末张：value-2, value-1, value
+                    {value - 2, 0}
+            };
 
-            int totalHave = have0 + have1 + have2;
-            int needForShun = Math.max(0, 3 - totalHave);
-
-            if (needForShun <= goldCount && value + 2 <= 9) {
-                // 扣除一组顺子里真实存在的牌（每个位置最多扣 1）
-                int use0 = Math.min(1, have0);
-                int use1 = Math.min(1, have1);
-                int use2 = Math.min(1, have2);
-
-                counts[type][value]     -= use0;
-                counts[type][value + 1] -= use1;
-                counts[type][value + 2] -= use2;
-
-                if (allMelds(counts, goldCount - needForShun)) {
-                    counts[type][value]     += use0;
-                    counts[type][value + 1] += use1;
-                    counts[type][value + 2] += use2;
-                    return true;
+            for (int[] p : patterns) {
+                int start = p[0];
+                // 起始点必须在 1..7 之间，才能保证 [start, start+1, start+2] 落在 1..9 里
+                if (start < 1 || start > 7) {
+                    continue;
                 }
 
-                // 回溯
-                counts[type][value]     += use0;
-                counts[type][value + 1] += use1;
-                counts[type][value + 2] += use2;
+                int v0 = start;
+                int v1 = start + 1;
+                int v2 = start + 2;
+
+                // 当前递归的“最小牌”必须在此顺子形态中，否则可能跳过它导致死循环
+                if (value != v0 && value != v1 && value != v2) {
+                    continue;
+                }
+
+                int have0 = counts[type][v0];
+                int have1 = counts[type][v1];
+                int have2 = counts[type][v2];
+
+                // 顺子必须是 (v0, v1, v2) 各 1 张；缺哪个位置就用金补哪个位置。
+                int needForShun = 0;
+                if (have0 <= 0) needForShun++;
+                if (have1 <= 0) needForShun++;
+                if (have2 <= 0) needForShun++;
+
+                if (needForShun <= goldCount) {
+                    // 扣除一组顺子里真实存在的牌（每个位置最多扣 1）
+                    int use0 = Math.min(1, have0);
+                    int use1 = Math.min(1, have1);
+                    int use2 = Math.min(1, have2);
+
+                    counts[type][v0] -= use0;
+                    counts[type][v1] -= use1;
+                    counts[type][v2] -= use2;
+
+                    if (allMelds(counts, goldCount - needForShun)) {
+                        counts[type][v0] += use0;
+                        counts[type][v1] += use1;
+                        counts[type][v2] += use2;
+                        return true;
+                    }
+
+                    // 回溯
+                    counts[type][v0] += use0;
+                    counts[type][v1] += use1;
+                    counts[type][v2] += use2;
+                }
             }
         }
 

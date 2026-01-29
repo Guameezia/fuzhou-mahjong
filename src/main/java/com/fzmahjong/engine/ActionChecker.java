@@ -186,16 +186,7 @@ public class ActionChecker {
 
             boolean canWinNormal = WinValidator.canWin(test, goldTile, false);
 
-            // 抢金听牌：16 张暗牌时，摸到金牌可以“抢金和牌”，需要用 isQiangJin=true 再判一次。
-            boolean canWinQiangJin = false;
-            if (!canWinNormal
-                    && goldTile != null
-                    && candidate.isSameAs(goldTile)
-                    && baseTiles.size() == 16) {
-                canWinQiangJin = WinValidator.canWin(test, goldTile, true);
-            }
-
-            if (canWinNormal || canWinQiangJin) {
+            if (canWinNormal) {
                 tingTiles.add(candidate);
             }
         }

@@ -113,6 +113,27 @@ public class RoomManager {
     }
 
     /**
+     * 解散房间：
+     * - 从 rooms 中移除对应的 GameEngine
+     * - 清理所有属于该房间的玩家映射
+     */
+    public void destroyRoom(String roomId) {
+        if (roomId == null) {
+            return;
+        }
+
+        GameEngine removed = rooms.remove(roomId);
+        if (removed == null) {
+            return;
+        }
+
+        // 清理玩家与房间的映射关系
+        playerRoomMap.entrySet().removeIf(entry -> roomId.equals(entry.getValue()));
+
+        log.info("房间 {} 已解散（destroyRoom）", roomId);
+    }
+
+    /**
      * 根据玩家ID获取所在房间ID
      */
     public String getRoomIdByPlayerId(String playerId) {

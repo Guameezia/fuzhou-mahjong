@@ -317,11 +317,52 @@ function updateGameStatus(data) {
             break;
         case 'FINISHED':
             statusText = 'Game Over';    
-            // 游戏结束后清除会话，避免下次自动恢复
-            setTimeout(function() {
-                clearGameSession();
-                console.log('游戏结束，已清除会话');
-            }, 3000);
+            // 游戏结束后自动解散房间并返回初始界面：
+            // 1. 断开 WebSocket
+            // 2. 清除本地会话，避免下次自动恢复
+            // 3. 重置前端状态并回到登录界面
+            (function handleGameFinishedOnce() {
+                // 避免重复执行：简单判断当前是否仍在游戏界面
+                const gameSection = document.getElementById('gameSection');
+                const loginSection = document.getElementById('loginSection');
+                if (!gameSection || !loginSection) return;
+                if (!gameSection.classList.contains('active')) {
+                    // 已经回到登录界面，无需再次处理
+                    return;
+                }
+
+                // 略延迟一点点，给玩家看到 "Game Over" 提示的时间
+                setTimeout(function() {
+                    try {
+                        if (stompClient) {
+                            stompClient.disconnect();
+                            stompClient = null;
+                            console.log('Game finished, WebSocket disconnected');
+                        }
+                    } catch (e) {
+                        console.error('断开 WebSocket 时出错:', e);
+                    }
+
+                    clearGameSession();
+                    console.log('游戏结束，已清除会话');
+
+                    // 重置前端状态
+                    currentRoomId = null;
+                    currentPlayerId = null;
+                    selectedTileId = null;
+                    gameState = null;
+
+                    // 切换回登录界面
+                    gameSection.classList.remove('active');
+                    loginSection.classList.add('active');
+
+                    // 清空输入
+                    const nameInput = document.getElementById('playerName');
+                    const roomInput = document.getElementById('roomId');
+                    if (nameInput) nameInput.value = '';
+                    if (roomInput) roomInput.value = '';
+                }, 1500);
+            })();
             break;
         case 'CONFIRM_CONTINUE':
             statusText = 'Waiting for confirmation to continue...'; 
@@ -359,9 +400,11 @@ function ensureContinuePromptUI() {
     container.style.minWidth = '280px';
     container.style.maxWidth = '90vw';
     container.innerHTML = `
-        <div style="font-size:18px;font-weight:800;margin-bottom:10px;color:#333;">轮庄一圈</div>
-        <div id="continuePromptText" style="font-size:14px;color:#555;margin-bottom:14px;line-height:1.4;">
+        <div style="font-size:18px;font-weight:800;margin-bottom:10px;color:#333;">
             Do you want to continue the game?
+        </div>
+        <div id="continuePromptText" style="font-size:14px;color:#555;margin-bottom:14px;line-height:1.4;">
+            Each player takes turns being the dealer.
         </div>
         <div style="display:flex;gap:10px;justify-content:center;">
             <button id="btnContinueYes" class="action-btn" style="background:linear-gradient(135deg,#4caf50 0%,#45a049 100%);">Continue</button>
@@ -606,7 +649,7 @@ function updateMyHand(tiles) {
     const countSpan = document.getElementById('myHandCount');
     
     container.innerHTML = '';
-    countSpan.textContent = `(${tiles.length})`;
+    countSpan.textContent = `${tiles.length}`;
     
     // 期望行为：
     // - 新摸进来的那一张（包括杠后补牌）始终在最右侧

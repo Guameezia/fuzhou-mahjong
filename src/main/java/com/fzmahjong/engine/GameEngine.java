@@ -1117,6 +1117,14 @@ public class GameEngine {
         gameState.setContinueDecision(playerId, willContinue);
         log.info("玩家 {} 选择{}继续对局", p.getName(), willContinue ? "" : "不");
 
+        // 只要有任意一名玩家选择“不继续”，立刻结束本房间对局，
+        // 后续由控制器根据 FINISHED 阶段解散房间并让所有客户端回到初始界面。
+        if (!willContinue) {
+            gameState.setPhase(GamePhase.FINISHED);
+            log.info("玩家 {} 选择不继续，对局结束（无需等待其他玩家表态）", p.getName());
+            return true;
+        }
+
         if (!gameState.allContinueDecided()) {
             return true;
         }
