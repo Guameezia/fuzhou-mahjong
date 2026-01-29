@@ -205,35 +205,6 @@ function connectWebSocket() {
     });
 }
 
-// 退出游戏
-function exitGame() {
-    if (confirm('确定要退出游戏吗？')) {
-        // 断开 WebSocket
-        if (stompClient) {
-            stompClient.disconnect();
-        }
-        
-        // 清除游戏会话
-        clearGameSession();
-        
-        // 重置状态
-        currentRoomId = null;
-        currentPlayerId = null;
-        selectedTileId = null;
-        gameState = null;
-        
-        // 返回登录界面
-        document.getElementById('gameSection').classList.remove('active');
-        document.getElementById('loginSection').classList.add('active');
-        
-        // 清空表单
-        document.getElementById('playerName').value = '';
-        document.getElementById('roomId').value = '';
-        
-        console.log('已退出游戏');
-    }
-}
-
 // 更新公共视图
 function updatePublicView(data) {
     if (data.goldTile) {
