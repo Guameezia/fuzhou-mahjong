@@ -952,13 +952,13 @@ function updateAvailableActions(actions) {
     // 检查是否有操作（别人出牌后可以吃碰杠胡）
     const hasActions = actions.canChi || actions.canPeng || actions.canGang || actions.canHu;
     
-    // 检查摸牌后可以进行的操作（自摸、暗杠、三金倒）
+    // 检查摸牌后可以进行的操作（胡〈包括自摸/三金倒/抢金/天胡等〉、暗杠）
     const canSelfAction = actions.canHu || actions.canAnGang || actions.canSanJinDao;
     // 后端在“别人出牌后”的判定中会下发 discardedTile 字段；
     // 摸牌后的自摸/暗杠/三金倒场景，不会带 discardedTile。
     const fromDiscard = !!actions.discardedTile;
     
-    // 如果是摸牌后的操作选择（自摸、暗杠、三金倒）：
+    // 如果是摸牌后的操作选择（胡/暗杠等自操作）：
     // 仅依赖“有自操作 & 当前不是吃碰杠胡（无 discardedTile）”来判断，
     // 避免 currentActionType / currentActionPlayerId 状态异常导致前端不弹窗。
     if (canSelfAction && !fromDiscard && actionButtonsPanel && actionButtons) {
@@ -974,29 +974,14 @@ function updateAvailableActions(actions) {
         tipDiv.textContent = '';
         actionButtons.appendChild(tipDiv);
         
-        // 三金倒按钮（优先级最高）
-        if (actions.canSanJinDao) {
-            const btn = document.createElement('button');
-            btn.className = 'action-btn';
-            btn.style.background = 'linear-gradient(135deg, #ff6f00 0%, #e65100 100%)';
-            btn.style.fontSize = '22px';
-            btn.style.fontWeight = 'bold';
-            btn.style.boxShadow = '0 4px 8px rgba(255, 111, 0, 0.4)';
-            btn.textContent = '三金倒';
-            btn.onclick = function() {
-                doHu(); // 三金倒也是胡牌的一种
-            };
-            actionButtons.appendChild(btn);
-        }
-        
-        // 自摸按钮
+        // 胡牌按钮（包括自摸 / 三金倒 / 抢金 / 天胡 等自摸型胡）
         if (actions.canHu) {
             const btn = document.createElement('button');
             btn.className = 'action-btn';
             btn.style.background = 'linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%)';
             btn.style.fontSize = '22px';
             btn.style.fontWeight = 'bold';
-            btn.textContent = '自摸';
+            btn.textContent = '胡';
             btn.onclick = function() {
                 doHu();
             };
@@ -1009,7 +994,7 @@ function updateAvailableActions(actions) {
             btn.className = 'action-btn';
             btn.style.background = 'linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%)';
             btn.style.fontSize = '20px';
-            btn.textContent = '暗杠';
+            btn.textContent = '杠';
             btn.onclick = function() {
                 // 从手牌中找到对应的牌
                 const handTiles = gameState && gameState.myHandTiles ? gameState.myHandTiles : [];

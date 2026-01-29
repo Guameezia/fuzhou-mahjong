@@ -33,6 +33,10 @@ public class GameState {
     private int lastDrawPlayerIndex;             // 最近一次摸牌的玩家索引
     private int lastDrawValidHandCountBefore;    // 最近一次摸牌前，该玩家“暗牌（不含花）”张数
 
+    // === 胡牌结果记录 ===
+    private String lastWinPlayerId;              // 最近一局胡牌玩家ID（流局则为null）
+    private String lastWinType;                  // 最近一局胡牌类型（清一色/混一色/金龙/金雀/三金倒/无花无杠/天胡/抢金/一张花/自摸/胡）
+
     public GameState(String roomId) {
         this.roomId = roomId;
         this.players = new ArrayList<>();
@@ -52,6 +56,8 @@ public class GameState {
         this.lastDrawnTile = null;
         this.lastDrawPlayerIndex = -1;
         this.lastDrawValidHandCountBefore = -1;
+        this.lastWinPlayerId = null;
+        this.lastWinType = null;
     }
 
     public String getRoomId() {
@@ -350,5 +356,21 @@ public class GameState {
 
     public void setLastDrawValidHandCountBefore(int lastDrawValidHandCountBefore) {
         this.lastDrawValidHandCountBefore = lastDrawValidHandCountBefore;
+    }
+
+    public String getLastWinPlayerId() {
+        return lastWinPlayerId;
+    }
+
+    public void setLastWinPlayerId(String lastWinPlayerId) {
+        this.lastWinPlayerId = lastWinPlayerId;
+    }
+
+    public String getLastWinType() {
+        return lastWinType;
+    }
+
+    public void setLastWinType(String lastWinType) {
+        this.lastWinType = lastWinType;
     }
 }

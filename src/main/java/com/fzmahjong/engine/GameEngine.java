@@ -416,13 +416,17 @@ public class GameEngine {
         List<Tile> anGangTiles = ActionChecker.canAnGang(player);
         boolean canAnGang = anGangTiles != null && !anGangTiles.isEmpty();
         boolean isQiangJin = isQiangJinForCurrentDraw(player, goldTile);
-        boolean canHu = ActionChecker.canHu(player, null, goldTile, isQiangJin);
+        boolean canHuNormal = ActionChecker.canHu(player, null, goldTile, isQiangJin);
 
         boolean canSanJinDao = false;
         if (goldTile != null) {
             long goldCount = player.getHandTiles().stream().filter(t -> t.isSameAs(goldTile)).count();
             canSanJinDao = goldCount >= 3;
         }
+
+        // 花胡：累计花牌数达到 20 张，直接胡牌（独立于普通牌型）
+        boolean canHuaHu = isHuaHu(player);
+        boolean canHu = canHuNormal || canHuaHu;
 
         Map<String, Object> playerActions = new HashMap<>();
         playerActions.put("canChi", false);
@@ -451,11 +455,12 @@ public class GameEngine {
         
         gameState.setPlayerActions(player.getId(), playerActions);
         
-        log.debug("玩家 {} 摸牌后可用操作：暗杠={}, 胡={}, 三金倒={}",
+        log.debug("玩家 {} 摸牌后可用操作：暗杠={}, 胡={}, 三金倒={}, 花胡={}",
             player.getName(),
             canAnGang,
             canHu,
-            canSanJinDao);
+            canSanJinDao,
+            canHuaHu);
 
         // 庄家首次再摸牌后，关闭抢金窗口（本局只开放这一轮的抢金）
         if (gameState.isQiangJinWindowActive() && player.getPosition() == gameState.getDealerIndex()) {
@@ -1037,8 +1042,10 @@ public class GameEngine {
         if (isZiMo) {
             isQiangJin = isQiangJinForCurrentDraw(player, gameState.getGoldTile());
         }
-        boolean canHu = ActionChecker.canHu(player, tileForHuCheck,
+        boolean canHuNormal = ActionChecker.canHu(player, tileForHuCheck,
             gameState.getGoldTile(), isQiangJin);
+        boolean isHuaHu = isHuaHu(player);
+        boolean canHu = canHuNormal || isHuaHu;
         
         if (!canHu) {
             log.warn("玩家 {} 不能胡牌（类型={}，最近弃牌={}，弃牌玩家索引={}）",
@@ -1053,11 +1060,198 @@ public class GameEngine {
         if (!isZiMo && discardedTile != null && lastDiscardPlayerIndex != player.getPosition()) {
             player.addTile(discardedTile);
         }
-        
-        log.info("玩家 {} 胡牌！", player.getName());
+
+        // 依据当前局面与规则，判定本次胡牌的“牌型类型”标签
+        String winType = determineWinType(player, isZiMo, isQiangJin);
+        gameState.setLastWinPlayerId(player.getId());
+        gameState.setLastWinType(winType);
+
+        log.info("玩家 {} 胡牌！类型={}", player.getName(), winType);
         finishHand(player.getId());
         
         return true;
+    }
+
+    /**
+     * 根据当前局面判定胡牌类型（只记录一个最终类型标签）
+     *
+     * 优先级：
+     * 清一色 > 混一色 > 金龙 > 金雀 > 三金倒 > 无花无杠 > 天胡 > 抢金 > 花胡 > 一张花 > 自摸 > 胡
+     */
+    private String determineWinType(Player player, boolean isZiMo, boolean isQiangJin) {
+        Tile goldTile = gameState.getGoldTile();
+
+        // 统计手牌中金牌数量（包含点炮牌已加入后的完整胡牌牌组）
+        int goldCount = 0;
+        for (Tile t : player.getHandTiles()) {
+            if (goldTile != null && t.isSameAs(goldTile)) {
+                goldCount++;
+            }
+        }
+
+        // 统计花牌与杠
+        int flowerCount = player.getFlowerTiles() == null ? 0 : player.getFlowerTiles().size();
+        boolean hasKong = false;
+        if (player.getExposedMelds() != null) {
+            for (List<Tile> meld : player.getExposedMelds()) {
+                if (meld != null && meld.size() == 4) {
+                    hasKong = true;
+                    break;
+                }
+            }
+        }
+        if (!hasKong && player.getConcealedKongs() != null && !player.getConcealedKongs().isEmpty()) {
+            hasKong = true;
+        }
+
+        boolean noFlowerNoKong = flowerCount == 0 && !hasKong;
+        boolean oneFlower = flowerCount == 1;
+        boolean isHuaHu = flowerCount >= 20;
+
+        // 天胡：庄家开局17张、未有任何出牌且直接自摸胡
+        boolean isTianHu = isZiMo
+                && player.isDealer()
+                && gameState.getDiscardedTiles().isEmpty();
+
+        // 三金倒：自摸且手上至少三张金（包括庄家起手17张三金）
+        boolean isSanJinDao = isZiMo && goldCount >= 3;
+
+        // 花色统计（用于清一色 / 混一色）
+        // 忽略花牌，只看所有参与胡牌的牌（手牌 + 明牌 + 暗杠）
+        Set<Integer> suitSet = new HashSet<>(); // 0:万,1:条,2:饼
+        boolean hasHonor = false;               // 是否包含字牌（风/箭）
+
+        // 收集所有非花牌（手牌）
+        for (Tile t : player.getHandTiles()) {
+            if (t == null || t.getType() == TileType.FLOWER) continue;
+            int idx = mapSuitIndex(t.getType());
+            if (idx >= 0) {
+                suitSet.add(idx);
+            } else {
+                hasHonor = true;
+            }
+        }
+        // 明牌
+        if (player.getExposedMelds() != null) {
+            for (List<Tile> meld : player.getExposedMelds()) {
+                if (meld == null) continue;
+                for (Tile t : meld) {
+                    if (t == null || t.getType() == TileType.FLOWER) continue;
+                    int idx = mapSuitIndex(t.getType());
+                    if (idx >= 0) {
+                        suitSet.add(idx);
+                    } else {
+                        hasHonor = true;
+                    }
+                }
+            }
+        }
+        // 暗杠
+        if (player.getConcealedKongs() != null) {
+            for (List<Tile> kong : player.getConcealedKongs()) {
+                if (kong == null) continue;
+                for (Tile t : kong) {
+                    if (t == null || t.getType() == TileType.FLOWER) continue;
+                    int idx = mapSuitIndex(t.getType());
+                    if (idx >= 0) {
+                        suitSet.add(idx);
+                    } else {
+                        hasHonor = true;
+                    }
+                }
+            }
+        }
+
+        boolean hasSuit = !suitSet.isEmpty();
+        boolean singleSuit = suitSet.size() == 1;
+        boolean hasGold = goldCount > 0;
+
+        // 清一色：所有非花牌都在同一花色，且不存在字牌
+        if (hasSuit && singleSuit && !hasHonor) {
+            return "清一色";
+        }
+
+        // 混一色：同一花色 + 字牌，同时包含金牌
+        // 这里按照常见福州麻将习惯进行近似：不追踪金牌是否“代替其他花色”。
+        if (hasSuit && singleSuit && hasHonor && hasGold) {
+            return "混一色";
+        }
+
+        // 金龙：胡牌时手里有三张金牌（不深入追踪其是否被当作万能牌使用）
+        if (goldCount >= 3) {
+            return "金龙";
+        }
+
+        // 金雀：胡牌时手里正好两张金牌（视作一对金将）
+        if (goldCount == 2) {
+            return "金雀";
+        }
+
+        // 三金倒：优先级在金龙/金雀之后，这里只兜底标记为“三金倒”
+        if (isSanJinDao) {
+            return "三金倒";
+        }
+
+        // 无花无杠：胡牌时既无花牌也无任何杠
+        if (noFlowerNoKong) {
+            return "无花无杠";
+        }
+
+        // 天胡
+        if (isTianHu) {
+            return "天胡";
+        }
+
+        // 抢金
+        if (isQiangJin) {
+            return "抢金";
+        }
+
+        // 花胡：补到/抓到花累计达到 20 张
+        if (isHuaHu) {
+            return "花胡";
+        }
+
+        // 一张花：胡牌时刚好只有一张花
+        if (oneFlower) {
+            return "一张花";
+        }
+
+        // 自摸（非以上特殊牌型）
+        if (isZiMo) {
+            return "自摸";
+        }
+
+        // 普通胡（平胡）
+        return "胡";
+    }
+
+    /**
+     * 将 TileType 映射为“可组成顺子”的花色下标（与 WinValidator 中类似，但用于胡型统计）
+     */
+    private int mapSuitIndex(TileType type) {
+        switch (type) {
+            case WAN:
+                return 0;
+            case TIAO:
+                return 1;
+            case BING:
+                return 2;
+            default:
+                return -1;
+        }
+    }
+
+    /**
+     * 花胡判定：当前玩家累计补到/持有的花牌数量达到 20 张。
+     * 这里按“玩家面前的花牌区”来统计（player.getFlowerTiles），
+     * 既包括起手补花，也包括对局过程中补到的所有花。
+     */
+    private boolean isHuaHu(Player player) {
+        if (player == null || player.getFlowerTiles() == null) {
+            return false;
+        }
+        return player.getFlowerTiles().size() >= 20;
     }
 
     /**
