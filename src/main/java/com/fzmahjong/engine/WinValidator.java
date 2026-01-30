@@ -48,9 +48,7 @@ public class WinValidator {
 
         // 抢金判断（开金后：满足“16 张时进一张金即可和”）
         // 注意：三头金优先级更高，因此必须在三头金之后判断
-        if (isQiangJin) {
-            return true;
-        }
+        // 抢金判断移到后面，需要先验证17张牌是否能胡
 
         // 将所有非金牌转换为“计数数组”表示，金牌只记录数量
         int[][] counts = new int[5][10]; // 0:万,1:条,2:饼,3:风,4:箭; 点数用1..9
@@ -73,6 +71,22 @@ public class WinValidator {
         }
 
         // 使用“计数 + 金牌 DFS”进行标准胡牌判断（平和 / 金雀 / 金将 / 金作面子）
+        // 抢金判断（开金后：满足"16 张时进一张金即可和"）
+        // 注意：必须在三头金之后判断，且需要验证17张牌是否能胡
+        // 抢金的条件：1) isQiangJin为true（已在GameEngine中验证：摸牌前16张+摸到金牌）
+        //           2) 17张牌（16张+1张金）必须能组成胡牌牌型
+        if (isQiangJin) {
+            // 验证17张牌是否能胡（必须满足3n+2，即17张）
+            if (totalTileCount == 17) {
+                // 使用"计数 + 金牌 DFS"进行标准胡牌判断
+                // 如果17张牌能胡，则返回true（抢金成功）
+                return canWinWithCounts(counts, goldCount);
+            }
+            // 如果张数不对，不能抢金
+            return false;
+        }
+
+        // 使用"计数 + 金牌 DFS"进行标准胡牌判断（平和 / 金雀 / 金将 / 金作面子）
         return canWinWithCounts(counts, goldCount);
     }
 

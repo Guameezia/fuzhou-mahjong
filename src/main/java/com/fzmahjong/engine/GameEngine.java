@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.Iterator;
 
 /**
  * 游戏引擎 - 核心游戏逻辑
@@ -117,16 +118,31 @@ public class GameEngine {
      */
     private void initializeWall() {
         List<Tile> wall;
-        if (gameState.isFirstHandAfterStart() && FirstHandPreset.hasPreset()) {
+        boolean isFirstHand = gameState.isFirstHandAfterStart();
+        boolean hasPreset = FirstHandPreset.hasPreset();
+        
+        log.info("初始化牌墙 - isFirstHandAfterStart: {}, hasPreset: {}", isFirstHand, hasPreset);
+        
+        if (isFirstHand && hasPreset) {
             wall = FirstHandPreset.buildWall();
             if (wall != null) {
                 log.info("第一局使用预设牌序，共{}张牌", wall.size());
             } else {
                 wall = TileFactory.createAndShuffleWall();
-                log.warn("预设牌序无效，改用随机牌墙");
+                log.warn("预设牌序无效（buildWall返回null），改用随机牌墙");
             }
             gameState.setFirstHandAfterStart(false);
         } else {
+            if (!isFirstHand) {
+                log.info("非第一局，使用随机牌墙");
+            } else if (!hasPreset) {
+                log.warn("第一局但未启用预设（WALL_ORDER为null或长度非144），使用随机牌墙");
+                if (FirstHandPreset.WALL_ORDER != null) {
+                    log.warn("WALL_ORDER实际长度: {}", FirstHandPreset.WALL_ORDER.size());
+                } else {
+                    log.warn("WALL_ORDER为null");
+                }
+            }
             wall = TileFactory.createAndShuffleWall();
             if (gameState.isFirstHandAfterStart()) {
                 gameState.setFirstHandAfterStart(false);
@@ -200,7 +216,7 @@ public class GameEngine {
                         // 移除花牌
                         player.replaceFlowerTile(flower);
                         
-                        // 补一张新牌，确保不是牌尾最后一张（金牌）
+                        // 补一张新牌，从牌尾取牌
                         Tile newTile = drawNonGoldTile();
                         if (newTile != null) {
                             player.addTile(newTile);
@@ -217,24 +233,13 @@ public class GameEngine {
     }
     
     /**
-     * 从牌墙抓一张非金牌的牌（用于补花）
-     * 牌尾最后一张是金牌，补花时不能补到它
-     * drawTile()从牌墙顶部取牌，所以不会取到最后一张（金牌）
+     * 从牌墙抓一张牌（用于补花）
+     * 补花从牌尾开始，补花阶段可以取最后一张
+     * 补花完成后，剩余牌墙的最后一张才是金牌
      */
     private Tile drawNonGoldTile() {
-        List<Tile> wallTiles = gameState.getWallTiles();
-        if (wallTiles.isEmpty()) {
-            return null;
-        }
-        
-        // 如果牌墙只有一张，那这张就是金牌，不能补
-        if (wallTiles.size() == 1) {
-            log.warn("牌墙只剩一张牌（金牌），无法补花");
-            return null;
-        }
-        
-        // 从牌墙顶部取牌（drawTile从索引0取，不会取到最后一张）
-        return gameState.drawTile();
+        // 补花从牌尾开始，直接取最后一张
+        return gameState.drawTileFromTail();
     }
 
     /**
@@ -1133,79 +1138,90 @@ public class GameEngine {
         boolean isSanJinDao = isZiMo && goldCount >= 3;
 
         // 花色统计（用于清一色 / 混一色）
-        // 忽略花牌，只看所有参与胡牌的牌（手牌 + 明牌 + 暗杠）
+        // 忽略花牌和字牌（字牌在福州麻将中也是花），只看所有参与胡牌的牌（手牌 + 明牌 + 暗杠）
+        // 注意：统计花色时排除金牌，因为金牌在混一色中被当作"花牌"处理，不应影响花色判断
         Set<Integer> suitSet = new HashSet<>(); // 0:万,1:条,2:饼
-        boolean hasHonor = false;               // 是否包含字牌（风/箭）
 
-        // 收集所有非花牌（手牌）
+        // 收集所有非花牌（手牌），排除金牌
         for (Tile t : player.getHandTiles()) {
             if (t == null || t.getType() == TileType.FLOWER) continue;
+            // 排除金牌：金牌在混一色中被当作"花牌"处理，不应影响花色判断
+            if (goldTile != null && t.isSameAs(goldTile)) continue;
             int idx = mapSuitIndex(t.getType());
             if (idx >= 0) {
                 suitSet.add(idx);
-            } else {
-                hasHonor = true;
             }
+            // 字牌（WIND/DRAGON）在福州麻将中是花牌，直接跳过
         }
-        // 明牌
+        // 明牌，排除金牌
         if (player.getExposedMelds() != null) {
             for (List<Tile> meld : player.getExposedMelds()) {
                 if (meld == null) continue;
                 for (Tile t : meld) {
                     if (t == null || t.getType() == TileType.FLOWER) continue;
+                    // 排除金牌
+                    if (goldTile != null && t.isSameAs(goldTile)) continue;
                     int idx = mapSuitIndex(t.getType());
                     if (idx >= 0) {
                         suitSet.add(idx);
-                    } else {
-                        hasHonor = true;
                     }
+                    // 字牌（WIND/DRAGON）在福州麻将中是花牌，直接跳过
                 }
             }
         }
-        // 暗杠
+        // 暗杠，排除金牌
         if (player.getConcealedKongs() != null) {
             for (List<Tile> kong : player.getConcealedKongs()) {
                 if (kong == null) continue;
                 for (Tile t : kong) {
                     if (t == null || t.getType() == TileType.FLOWER) continue;
+                    // 排除金牌
+                    if (goldTile != null && t.isSameAs(goldTile)) continue;
                     int idx = mapSuitIndex(t.getType());
                     if (idx >= 0) {
                         suitSet.add(idx);
-                    } else {
-                        hasHonor = true;
                     }
+                    // 字牌（WIND/DRAGON）在福州麻将中是花牌，直接跳过
                 }
             }
         }
 
         boolean hasSuit = !suitSet.isEmpty();
         boolean singleSuit = suitSet.size() == 1;
-        boolean hasGold = goldCount > 0;
-
-        // 清一色：所有非花牌都在同一花色，且不存在字牌
-        if (hasSuit && singleSuit && !hasHonor) {
-            return "清一色";
-        }
 
         // 混一色：同一花色 + 字牌，同时包含金牌
         // 这里按照常见福州麻将习惯进行近似：不追踪金牌是否“代替其他花色”。
-        if (hasSuit && singleSuit && hasHonor && hasGold) {
-            return "混一色";
+        // 混一色：同一花色 + 有金（且金不是该花色）
+        // 优先级：清一色 > 混一色 > 金龙 > 金雀
+        if (hasSuit && singleSuit && goldCount > 0 && goldTile != null) {
+            // 检查金的花色：如果金是万/条/饼，则不能是手牌的花色
+            int goldSuitIndex = mapSuitIndex(goldTile.getType());
+            // 如果金是字牌/花牌（goldSuitIndex == -1），或者金的花色与手牌花色不同，则符合混一色条件
+            if (goldSuitIndex < 0 || !suitSet.contains(goldSuitIndex)) {
+                return "混一色";
+            }
         }
 
-        // 金龙：胡牌时手里有三张金牌（不深入追踪其是否被当作万能牌使用）
-        if (goldCount >= 3) {
-            return "金龙";
+        // 清一色：所有非花牌都在同一花色（且金牌也是该花色，或者没有金牌）
+        if (hasSuit && singleSuit) {
+            return "清一色";
         }
 
-        // 金雀：胡牌时手里正好两张金牌（视作一对金将）
-        if (goldCount == 2) {
-            return "金雀";
-        }
-
-        // 三金倒：优先级在金龙/金雀之后，这里只兜底标记为“三金倒”
-        if (isSanJinDao) {
+        // 按照优先级判断：金龙 > 金雀 > 三金倒 > 无花无杠
+        
+        // 先检查金龙：至少3张金，且去掉3张金后剩下的牌能组成胡牌
+        if (goldCount >= 3 && isSanJinDao) {
+            if (canWinWithoutThreeGolds(player, goldTile)) {
+                return "金龙";
+            }
+            // 如果不是金龙，但有3张金且自摸，则是三金倒
             return "三金倒";
+        }
+        
+        // 再检查金雀：2张金做对子，金不代替任何牌
+        // 需要验证：去掉两张金后，剩下的牌能组成标准胡牌（不使用金补）
+        if (goldCount == 2 && isJinQue(player, goldTile)) {
+            return "金雀";
         }
 
         // 无花无杠：胡牌时既无花牌也无任何杠
@@ -1240,6 +1256,187 @@ public class GameEngine {
 
         // 普通胡（平胡）
         return "胡";
+    }
+
+    /**
+     * 检查是否是金雀：用两张金做对子，金不代替任何牌
+     * 条件：去掉两张金后，剩下的牌能组成标准胡牌（不使用金补）
+     * 注意：去掉2张金后，剩下的牌应该是15张（3n），能组成5个面子
+     */
+    private boolean isJinQue(Player player, Tile goldTile) {
+        if (player == null || goldTile == null) {
+            return false;
+        }
+        
+        // 复制手牌列表
+        List<Tile> handTiles = new ArrayList<>(player.getHandTiles());
+        
+        // 去掉2张金牌
+        int removed = 0;
+        Iterator<Tile> it = handTiles.iterator();
+        while (it.hasNext() && removed < 2) {
+            Tile tile = it.next();
+            if (tile.isSameAs(goldTile)) {
+                it.remove();
+                removed++;
+            }
+        }
+        
+        // 如果去掉2张金后不是15张，不能是金雀
+        // 过滤掉花牌
+        List<Tile> validTiles = new ArrayList<>();
+        for (Tile tile : handTiles) {
+            if (tile.getType() != com.fzmahjong.model.TileType.FLOWER) {
+                validTiles.add(tile);
+            }
+        }
+        
+        // 如果去掉2张金后不是15张，不能是金雀
+        if (validTiles.size() != 15) {
+            return false;
+        }
+        
+        // 统计牌的数量
+        int[][] counts = new int[5][10]; // 0:万,1:条,2:饼,3:风,4:箭; 点数用1..9
+        for (Tile tile : validTiles) {
+            int typeIndex = mapTypeIndexForWinValidator(tile.getType());
+            int value = tile.getValue();
+            if (value >= 1 && value <= 9 && typeIndex >= 0) {
+                counts[typeIndex][value]++;
+            }
+        }
+        
+        // 检查能否组成5个面子（不使用金补）
+        return canFormFiveMelds(counts);
+    }
+    
+    /**
+     * 检查能否用给定的牌组成5个面子（不使用金补）
+     */
+    private boolean canFormFiveMelds(int[][] counts) {
+        // 使用递归检查能否组成5个面子
+        return canFormFiveMeldsRecursive(counts, 0);
+    }
+    
+    /**
+     * 递归检查能否组成5个面子
+     */
+    private boolean canFormFiveMeldsRecursive(int[][] counts, int meldCount) {
+        // 如果已经组成5个面子，检查是否所有牌都用完了
+        if (meldCount == 5) {
+            for (int i = 0; i < counts.length; i++) {
+                for (int j = 1; j <= 9; j++) {
+                    if (counts[i][j] > 0) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+        
+        // 找到当前还存在的最小一张牌
+        int type = -1;
+        int value = -1;
+        outer:
+        for (int t = 0; t < counts.length; t++) {
+            for (int v = 1; v <= 9; v++) {
+                if (counts[t][v] > 0) {
+                    type = t;
+                    value = v;
+                    break outer;
+                }
+            }
+        }
+        
+        // 如果没有牌了，但还没组成5个面子，返回false
+        if (type == -1) {
+            return false;
+        }
+        
+        // 尝试一：以 (type, value) 组刻子 AAA
+        if (counts[type][value] >= 3) {
+            counts[type][value] -= 3;
+            if (canFormFiveMeldsRecursive(counts, meldCount + 1)) {
+                counts[type][value] += 3;
+                return true;
+            }
+            counts[type][value] += 3;
+        }
+        
+        // 尝试二：如果是万/条/饼，尝试顺子 ABC
+        if (isShunziTypeForJinQue(type) && value <= 7) {
+            if (counts[type][value] > 0 && counts[type][value + 1] > 0 && counts[type][value + 2] > 0) {
+                counts[type][value]--;
+                counts[type][value + 1]--;
+                counts[type][value + 2]--;
+                if (canFormFiveMeldsRecursive(counts, meldCount + 1)) {
+                    counts[type][value]++;
+                    counts[type][value + 1]++;
+                    counts[type][value + 2]++;
+                    return true;
+                }
+                counts[type][value]++;
+                counts[type][value + 1]++;
+                counts[type][value + 2]++;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 将 TileType 映射到内部计数数组的下标（用于WinValidator）
+     */
+    private int mapTypeIndexForWinValidator(com.fzmahjong.model.TileType type) {
+        switch (type) {
+            case WAN:
+                return 0;
+            case TIAO:
+                return 1;
+            case BING:
+                return 2;
+            case WIND:
+                return 3;
+            case DRAGON:
+                return 4;
+            default:
+                return -1;
+        }
+    }
+    
+    /**
+     * 是否是可以组成顺子的花色（万/条/饼）
+     */
+    private boolean isShunziTypeForJinQue(int typeIndex) {
+        return typeIndex == 0 || typeIndex == 1 || typeIndex == 2;
+    }
+
+    /**
+     * 检查去掉3张金后，剩下的牌能否组成胡牌（用于判断是否是金龙）
+     * 金龙的条件：不仅要有三个金，剩下的3n+2手牌也要是胡的才行
+     */
+    private boolean canWinWithoutThreeGolds(Player player, Tile goldTile) {
+        if (player == null || goldTile == null) {
+            return false;
+        }
+        
+        // 复制手牌列表
+        List<Tile> handTiles = new ArrayList<>(player.getHandTiles());
+        
+        // 去掉3张金牌
+        int removed = 0;
+        Iterator<Tile> it = handTiles.iterator();
+        while (it.hasNext() && removed < 3) {
+            Tile tile = it.next();
+            if (tile.isSameAs(goldTile)) {
+                it.remove();
+                removed++;
+            }
+        }
+        
+        // 如果去掉3张金后，剩下的牌能组成胡牌，就是金龙
+        // 注意：这里不传 isQiangJin，因为抢金是另一种胡牌方式
+        return WinValidator.canWin(handTiles, goldTile, false);
     }
 
     /**
