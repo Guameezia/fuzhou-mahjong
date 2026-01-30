@@ -27,6 +27,9 @@ public class GameState {
     private String currentActionPlayerId;        // 当前应该执行操作的玩家ID（按优先级）
     private String currentActionType;            // 当前优先级操作类型（"hu", "gang", "peng", "chi"）
 
+    // === 第一局预设牌序（测试用）===
+    private boolean firstHandAfterStart = true;  // 是否为本房间“第一局”（第一局可用预设牌墙，之后恢复随机）
+
     // === 抢金/开局相关状态 ===
     private boolean qiangJinWindowActive;        // 庄家首打后到庄家首次再摸牌前：抢金窗口有效
     private Tile lastDrawnTile;                  // 最近一次摸到/补到的最终有效牌（非花）
@@ -58,6 +61,15 @@ public class GameState {
         this.lastDrawValidHandCountBefore = -1;
         this.lastWinPlayerId = null;
         this.lastWinType = null;
+        this.firstHandAfterStart = true;
+    }
+
+    public boolean isFirstHandAfterStart() {
+        return firstHandAfterStart;
+    }
+
+    public void setFirstHandAfterStart(boolean firstHandAfterStart) {
+        this.firstHandAfterStart = firstHandAfterStart;
     }
 
     public String getRoomId() {

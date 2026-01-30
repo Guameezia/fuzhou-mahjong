@@ -113,11 +113,27 @@ public class GameEngine {
 
     /**
      * 初始化牌墙
+     * 第一局若配置了 {@link FirstHandPreset#WALL_ORDER}（144 张），则使用预设牌序；否则及第二局起均随机。
      */
     private void initializeWall() {
-        List<Tile> wall = TileFactory.createAndShuffleWall();
+        List<Tile> wall;
+        if (gameState.isFirstHandAfterStart() && FirstHandPreset.hasPreset()) {
+            wall = FirstHandPreset.buildWall();
+            if (wall != null) {
+                log.info("第一局使用预设牌序，共{}张牌", wall.size());
+            } else {
+                wall = TileFactory.createAndShuffleWall();
+                log.warn("预设牌序无效，改用随机牌墙");
+            }
+            gameState.setFirstHandAfterStart(false);
+        } else {
+            wall = TileFactory.createAndShuffleWall();
+            if (gameState.isFirstHandAfterStart()) {
+                gameState.setFirstHandAfterStart(false);
+            }
+            log.info("牌墙初始化完成，共{}张牌", wall.size());
+        }
         gameState.setWallTiles(wall);
-        log.info("牌墙初始化完成，共{}张牌", wall.size());
     }
 
     /**

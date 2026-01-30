@@ -12,11 +12,11 @@ import java.util.List;
 public class TileFactory {
 
     /**
-     * 创建一副完整的福州麻将牌（152张）
-     * 万、条、饼各36张（1-9，每张4张）
-     * 东南西北各4张
-     * 中发白各4张
-     * 春夏秋冬梅兰竹菊各1张（共8张花牌）
+     * 创建一副完整的福州麻将牌（144张）
+     * 公式：3×4×9 + 4×7 + 8 = 108 + 28 + 8
+     * - 万、条、饼：3 门 × 4 张 × 9 面 = 108 张
+     * - 字牌（东南西北 + 中发白）：7 种 × 4 张 = 28 张
+     * - 花牌（春夏秋冬梅兰竹菊）：8 张
      */
     public static List<Tile> createFullDeck() {
         List<Tile> tiles = new ArrayList<>();
