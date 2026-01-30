@@ -5,7 +5,14 @@ spring:
   application:
     name: fuzhou-mahjong
 
+# 日志规范：
+# - INFO：关键业务事件（开局/出牌/吃碰杠/胡牌/流局/房间创建与加入）
+# - DEBUG：详细流水（摸牌、补花、轮到谁、可用操作列表等），生产可改为 INFO 减少输出
+# - WARN：可恢复异常（房间不存在、牌墙空、非法操作等）
+# - ERROR：不可恢复错误
 logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{20} - %msg%n"
   level:
     com.fzmahjong: DEBUG
     org.springframework.web.socket: DEBUG

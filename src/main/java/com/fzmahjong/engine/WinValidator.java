@@ -2,16 +2,13 @@ package com.fzmahjong.engine;
 
 import com.fzmahjong.model.Tile;
 import com.fzmahjong.model.TileType;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import java.util.*;
 
 /**
- * 和牌判断器
+ * 和牌判断器。仅做“能否和牌”的纯逻辑判断，不输出日志；
+ * 听牌计算会多次调用本类，实际胡牌时的类型与日志由 GameEngine 负责。
  */
 public class WinValidator {
-
-    private static final Logger log = LoggerFactory.getLogger(WinValidator.class);
 
     /**
      * 检查是否可以和牌
@@ -45,8 +42,7 @@ public class WinValidator {
         int goldCount = countGoldTiles(validTiles, goldTile);
 
         // 三头金（3张金）
-        if (goldCount >= 3) {
-            log.info("三金倒！");
+        if (goldCount == 3) {
             return true;
         }
 
@@ -89,7 +85,6 @@ public class WinValidator {
         // 情况一：2 张金直接做将
         if (goldCount >= 2) {
             if (allMelds(counts, goldCount - 2)) {
-                log.info("金将和牌！");
                 return true;
             }
         }
@@ -106,7 +101,6 @@ public class WinValidator {
                 if (c >= 2) {
                     counts[type][value] -= 2;
                     if (allMelds(counts, goldCount)) {
-                        log.info("平和！");
                         counts[type][value] += 2; // 回溯前先恢复
                         return true;
                     }
@@ -117,7 +111,6 @@ public class WinValidator {
                 if (c >= 1 && goldCount >= 1) {
                     counts[type][value] -= 1;
                     if (allMelds(counts, goldCount - 1)) {
-                        log.info("金雀和牌！");
                         counts[type][value] += 1;
                         return true;
                     }
