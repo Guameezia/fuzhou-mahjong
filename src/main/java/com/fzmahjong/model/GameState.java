@@ -35,6 +35,7 @@ public class GameState {
     private Tile lastDrawnTile;                  // 最近一次摸到/补到的最终有效牌（非花）
     private int lastDrawPlayerIndex;             // 最近一次摸牌的玩家索引
     private int lastDrawValidHandCountBefore;    // 最近一次摸牌前，该玩家“暗牌（不含花）”张数
+    private boolean canQiangJinBeforeDraw;        // 摸牌前是否满足抢金条件（16张听牌+抢金窗口）
 
     // === 胡牌结果记录 ===
     private String lastWinPlayerId;              // 最近一局胡牌玩家ID（流局则为null）
@@ -59,6 +60,7 @@ public class GameState {
         this.lastDrawnTile = null;
         this.lastDrawPlayerIndex = -1;
         this.lastDrawValidHandCountBefore = -1;
+        this.canQiangJinBeforeDraw = false;
         this.lastWinPlayerId = null;
         this.lastWinType = null;
         this.firstHandAfterStart = true;
@@ -368,6 +370,14 @@ public class GameState {
 
     public void setLastDrawValidHandCountBefore(int lastDrawValidHandCountBefore) {
         this.lastDrawValidHandCountBefore = lastDrawValidHandCountBefore;
+    }
+
+    public boolean isCanQiangJinBeforeDraw() {
+        return canQiangJinBeforeDraw;
+    }
+
+    public void setCanQiangJinBeforeDraw(boolean canQiangJinBeforeDraw) {
+        this.canQiangJinBeforeDraw = canQiangJinBeforeDraw;
     }
 
     public String getLastWinPlayerId() {

@@ -270,7 +270,12 @@ public class GameEngine {
         // 如果开金开到花牌，算作庄家的补花，从牌尾再摸一张牌作为新金牌
         while (goldTile.isFlowerTile() && !wallTiles.isEmpty()) {
             log.info("开金开到花牌：{}，算作庄家补花", goldTile);
-            dealer.replaceFlowerTile(goldTile);
+            // 注意：此时花牌是从牌墙牌尾直接翻出的，并不在庄家手牌中，
+            // 如果直接调用 replaceFlowerTile 会因为 removeTile 失败而无法计入花牌区。
+            // 因此这里需要显式加入庄家的 flowerTiles，用于后续花胡/花数统计。
+            if (dealer.getFlowerTiles() != null) {
+                dealer.getFlowerTiles().add(goldTile);
+            }
             
             // 从牌尾再摸一张牌作为新金牌
             goldTile = gameState.drawTileFromTail();
@@ -310,6 +315,22 @@ public class GameEngine {
         }
         gameState.setLastDrawValidHandCountBefore(validHandCountBefore);
         gameState.setLastDrawPlayerIndex(player.getPosition());
+        
+        // 关键：在摸牌前检查是否满足抢金条件
+        // 抢金条件：1) 抢金窗口已打开 2) 摸牌前暗牌数为16 3) 摸牌前16张已听牌
+        boolean canQiangJinBeforeDraw = false;
+        if (gameState.isQiangJinWindowActive() && validHandCountBefore == 16) {
+            Tile goldTile = gameState.getGoldTile();
+            if (goldTile != null) {
+                // 检查当前16张是否听牌
+                List<Tile> tingTiles = ActionChecker.getTingTiles(player, goldTile);
+                canQiangJinBeforeDraw = tingTiles != null && !tingTiles.isEmpty();
+                if (canQiangJinBeforeDraw) {
+                    log.info("玩家 {} 摸牌前满足抢金条件：16张已听牌", player.getName());
+                }
+            }
+        }
+        gameState.setCanQiangJinBeforeDraw(canQiangJinBeforeDraw);
 
         Tile tile = gameState.drawTile();
         if (tile != null) {
@@ -492,14 +513,18 @@ public class GameEngine {
     /**
      * 抢金判定（本项目约定）：
      * - 在庄家首打之后开启抢金窗口；
-     * - 任意玩家在“暗牌 16 张（不含花）”时进张，若进的是金牌，则可直接胡（抢金）；
+     * - 任意玩家在"暗牌 16 张（不含花）"时进张，若进的是金牌，则可直接胡（抢金）；
      * - 三金倒优先级更高，由 WinValidator 保证最终裁决顺序。
+     * 
+     * 抢金触发条件（需同时满足）：
+     * 1. 抢金窗口已打开（庄家首打后到庄家再次摸牌前）
+     * 2. 摸牌前暗牌数为 16 张（不含花）
+     * 3. 摸牌前已经听牌（getTingTiles 返回非空）
+     * 
+     * 注意：抢金必须在摸牌前完成判断，摸牌后直接使用摸牌前检查的结果。
      */
     private boolean isQiangJinForCurrentDraw(Player player, Tile goldTile) {
         if (player == null || goldTile == null) {
-            return false;
-        }
-        if (!gameState.isQiangJinWindowActive()) {
             return false;
         }
         if (gameState.getLastDrawPlayerIndex() != player.getPosition()) {
@@ -509,10 +534,15 @@ public class GameEngine {
         if (lastDrawn == null || lastDrawn.getType() == TileType.FLOWER) {
             return false;
         }
-        if (!lastDrawn.isSameAs(goldTile)) {
-            return false;
+        
+        // 直接使用摸牌前检查的结果（在 playerDraw 中已设置）
+        boolean canQiangJin = gameState.isCanQiangJinBeforeDraw();
+        
+        if (canQiangJin) {
+            log.info("玩家 {} 触发抢金：摸牌前16张已听牌，摸到牌 {}", player.getName(), lastDrawn);
         }
-        return gameState.getLastDrawValidHandCountBefore() == 16;
+        
+        return canQiangJin;
     }
     
     /**
@@ -1129,10 +1159,18 @@ public class GameEngine {
         boolean oneFlower = flowerCount == 1;
         boolean isHuaHu = flowerCount >= 20;
 
-        // 天胡：庄家开局17张、未有任何出牌且直接自摸胡
+        // 自摸场景下，先判断“是否满足正常牌型胡”（不包含花胡等特殊判定）
+        boolean canHuNormalSelf = false;
+        if (isZiMo) {
+            canHuNormalSelf = ActionChecker.canHu(player, null, goldTile, isQiangJin);
+        }
+
+        // 天胡：庄家开局17张、未有任何出牌且直接“正常牌型自摸胡”
+        // 注意：如果只是靠 20 张花牌达成花胡，不应计为天胡。
         boolean isTianHu = isZiMo
                 && player.isDealer()
-                && gameState.getDiscardedTiles().isEmpty();
+                && gameState.getDiscardedTiles().isEmpty()
+                && canHuNormalSelf;
 
         // 三金倒：自摸且手上至少三张金（包括庄家起手17张三金）
         boolean isSanJinDao = isZiMo && goldCount >= 3;
@@ -1207,7 +1245,7 @@ public class GameEngine {
             return "清一色";
         }
 
-        // 按照优先级判断：金龙 > 金雀 > 三金倒 > 无花无杠
+        // 按照优先级判断：金龙 > 金雀 > 三金倒 > 抢金 > 无花无杠
         
         // 先检查金龙：至少3张金，且去掉3张金后剩下的牌能组成胡牌
         if (goldCount >= 3 && isSanJinDao) {
@@ -1224,6 +1262,11 @@ public class GameEngine {
             return "金雀";
         }
 
+        // 抢金：优先级放在三金倒之后、无花无杠之前
+        if (isQiangJin) {
+            return "抢金";
+        }
+
         // 无花无杠：胡牌时既无花牌也无任何杠
         if (noFlowerNoKong) {
             return "无花无杠";
@@ -1232,11 +1275,6 @@ public class GameEngine {
         // 天胡
         if (isTianHu) {
             return "天胡";
-        }
-
-        // 抢金
-        if (isQiangJin) {
-            return "抢金";
         }
 
         // 花胡：补到/抓到花累计达到 20 张
