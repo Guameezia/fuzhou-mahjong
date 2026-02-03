@@ -728,6 +728,8 @@ function ensureContinuePromptUI() {
         <div id="continuePromptText" style="font-size:14px;color:#555;margin-bottom:14px;line-height:1.4;">
             Each player takes turns being the dealer.
         </div>
+        <div id="scoreboardContainer" style="font-size:14px;color:#333;margin-bottom:12px;max-height:40vh;overflow:auto;">
+        </div>
         <div style="display:flex;gap:10px;justify-content:center;">
             <button id="btnContinueYes" class="action-btn" style="background:linear-gradient(135deg,#4caf50 0%,#45a049 100%);">Continue</button>
             <button id="btnContinueNo" class="action-btn" style="background:linear-gradient(135deg,#f44336 0%,#d32f2f 100%);">End</button>
@@ -754,6 +756,7 @@ function handleContinuePrompt(data) {
 
     const waiting = document.getElementById('continuePromptWaiting');
     const text = document.getElementById('continuePromptText');
+    const scoreboard = document.getElementById('scoreboardContainer');
 
     const isConfirmPhase = data && data.phase === 'CONFIRM_CONTINUE';
     if (!isConfirmPhase) {
@@ -771,6 +774,23 @@ function handleContinuePrompt(data) {
     const myDecision = decisions ? decisions[currentPlayerId] : null;
 
     panel.style.display = 'block';
+
+    // 排行榜：按分数从高到低排序
+    if (scoreboard && Array.isArray(data.players)) {
+        const playersCopy = data.players.slice().sort((a, b) => {
+            const sa = typeof a.score === 'number' ? a.score : 0;
+            const sb = typeof b.score === 'number' ? b.score : 0;
+            return sb - sa;
+        });
+        let html = '<div style="margin-bottom:6px;font-weight:700;">Score Ranking</div><ol style="padding-left:20px;margin:0;">';
+        playersCopy.forEach(p => {
+            const name = p.name || '-';
+            const s = typeof p.score === 'number' ? p.score : 0;
+            html += `<li style="margin-bottom:2px;">${name}: ${s} 分</li>`;
+        });
+        html += '</ol>';
+        scoreboard.innerHTML = html;
+    }
 
     // 显示已表态人数
     let decidedCount = 0;
@@ -863,6 +883,7 @@ function updatePlayerPosition(position, player, isActive) {
     const handCountElement = document.getElementById(`player${position.charAt(0).toUpperCase() + position.slice(1)}HandCount`);
     const flowerCountElement = document.getElementById(`player${position.charAt(0).toUpperCase() + position.slice(1)}FlowerCount`);
     const meldsElement = document.getElementById(`player${position.charAt(0).toUpperCase() + position.slice(1)}Melds`);
+    const scoreElement = document.getElementById(`player${position.charAt(0).toUpperCase() + position.slice(1)}Score`);
     
     if (nameElement) {
         // 名字旁展示连庄数（仅庄家显示；下庄清0）
@@ -872,6 +893,11 @@ function updatePlayerPosition(position, player, isActive) {
         } else {
             nameElement.textContent = player.name;
         }
+    }
+
+    if (scoreElement) {
+        const s = typeof player.score === 'number' ? player.score : 0;
+        scoreElement.textContent = s;
     }
     
     if (handCountElement) {

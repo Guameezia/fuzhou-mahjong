@@ -506,6 +506,7 @@ public class GameController {
             playerInfo.put("id", p.getId());
             playerInfo.put("name", p.getName());
             playerInfo.put("position", p.getPosition());
+            playerInfo.put("score", p.getScore());
             playerInfo.put("handSize", p.getHandSize());
             playerInfo.put("flowerTiles", p.getFlowerTiles());
             playerInfo.put("exposedMelds", p.getExposedMelds());

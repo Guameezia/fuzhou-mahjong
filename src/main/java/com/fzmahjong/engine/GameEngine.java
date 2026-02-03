@@ -857,7 +857,16 @@ public class GameEngine {
         }
         
         // 设置每个玩家的可用操作
-        // 注意：如果玩家可以同时"胡"和"碰"，应该都能选择
+        // 重要：需要给所有能执行"最高优先级或更高优先级"操作的玩家设置操作信息
+        // 例如：如果最高优先级是"碰"，那么能"胡"的玩家也应该能操作（因为"胡"优先级更高）
+        int highestPriorityIndex = -1;
+        for (int i = 0; i < actionTypes.length; i++) {
+            if (actionTypes[i].equals(highestPriorityAction)) {
+                highestPriorityIndex = i;
+                break;
+            }
+        }
+        
         for (Map.Entry<String, Map<String, Boolean>> entry : playerActionsMap.entrySet()) {
             String playerId = entry.getKey();
             Map<String, Boolean> actions = entry.getValue();
@@ -868,9 +877,36 @@ public class GameEngine {
                 continue;
             }
             
-            // 如果玩家可以执行最高优先级的操作，设置操作信息
-            // 但也要保留其他可用操作（例如：可以同时"胡"和"碰"）
-            if (highestPriorityPlayers.contains(playerId)) {
+            // 检查玩家是否能执行最高优先级或更高优先级的操作
+            boolean canExecuteHighestOrHigher = false;
+            if (highestPriorityIndex >= 0) {
+                // 检查从"胡"到最高优先级之间的所有操作
+                for (int i = 0; i <= highestPriorityIndex; i++) {
+                    String actionType = actionTypes[i];
+                    boolean canAction = false;
+                    switch (actionType) {
+                        case "hu":
+                            canAction = Boolean.TRUE.equals(actions.get("canHu"));
+                            break;
+                        case "gang":
+                            canAction = Boolean.TRUE.equals(actions.get("canGang"));
+                            break;
+                        case "peng":
+                            canAction = Boolean.TRUE.equals(actions.get("canPeng"));
+                            break;
+                        case "chi":
+                            canAction = Boolean.TRUE.equals(actions.get("canChi"));
+                            break;
+                    }
+                    if (canAction) {
+                        canExecuteHighestOrHigher = true;
+                        break;
+                    }
+                }
+            }
+            
+            // 如果玩家可以执行最高优先级或更高优先级的操作，设置操作信息
+            if (canExecuteHighestOrHigher) {
                 Map<String, Object> playerActions = new HashMap<>();
                 playerActions.put("discardedTile", discardedTile);
                 playerActions.put("discardPlayerIndex", discardPlayerIndex);
@@ -897,16 +933,33 @@ public class GameEngine {
         
         // 设置第一个应该执行操作的玩家（按玩家顺序）
         if (!highestPriorityPlayers.isEmpty()) {
-            // 从出牌玩家的下家开始，按逆时针顺序找到第一个可以执行操作的玩家
-            int startIndex = (discardPlayerIndex + 1) % 4;
-            for (int offset = 0; offset < 4; offset++) {
-                int playerIndex = (startIndex + offset) % 4;
-                Player player = gameState.getPlayers().get(playerIndex);
-                if (highestPriorityPlayers.contains(player.getId())) {
-                    gameState.setCurrentActionPlayerId(player.getId());
+            // 如果是胡牌，需要按照"下家 > 对家 > 上家"的优先级排序
+            if ("hu".equals(highestPriorityAction)) {
+                // 按照优先级顺序排序：下家 > 对家 > 上家
+                List<String> sortedHuPlayers = sortHuPlayersByPriority(
+                    highestPriorityPlayers, discardPlayerIndex);
+                if (!sortedHuPlayers.isEmpty()) {
+                    String firstPlayerId = sortedHuPlayers.get(0);
+                    gameState.setCurrentActionPlayerId(firstPlayerId);
                     gameState.setCurrentActionType(highestPriorityAction);
-                    log.info("设置优先级操作：玩家 {} 可以 {}（最高优先级）", player.getName(), highestPriorityAction);
-                    break;
+                    Player firstPlayer = findPlayerById(firstPlayerId);
+                    if (firstPlayer != null) {
+                        log.info("设置优先级操作：玩家 {} 可以 {}（最高优先级，按位置优先级：下家>对家>上家）", 
+                            firstPlayer.getName(), highestPriorityAction);
+                    }
+                }
+            } else {
+                // 其他操作（杠/碰/吃）仍然按逆时针顺序
+                int startIndex = (discardPlayerIndex + 1) % 4;
+                for (int offset = 0; offset < 4; offset++) {
+                    int playerIndex = (startIndex + offset) % 4;
+                    Player player = gameState.getPlayers().get(playerIndex);
+                    if (highestPriorityPlayers.contains(player.getId())) {
+                        gameState.setCurrentActionPlayerId(player.getId());
+                        gameState.setCurrentActionType(highestPriorityAction);
+                        log.info("设置优先级操作：玩家 {} 可以 {}（最高优先级）", player.getName(), highestPriorityAction);
+                        break;
+                    }
                 }
             }
         }
@@ -1302,6 +1355,14 @@ public class GameEngine {
             // 4）最近弃牌来自其他玩家，且当前并非摸牌后的自摸窗口，这是点炮
             isZiMo = false;
             tileForHuCheck = discardedTile;
+            
+            // 点炮时，需要检查优先级：只有优先级最高的玩家才能胡
+            // 如果当前玩家不是优先级最高的，拒绝胡牌
+            if (!isHighestPriorityHuPlayer(playerId, lastDiscardPlayerIndex)) {
+                log.warn("玩家 {} 不能胡牌：存在优先级更高的玩家可以胡（点炮优先级：下家>对家>上家）", 
+                    player.getName());
+                return false;
+            }
         }
 
         boolean isQiangJin = false;
@@ -1331,6 +1392,9 @@ public class GameEngine {
         String winType = determineWinType(player, isZiMo, isQiangJin);
         gameState.setLastWinPlayerId(player.getId());
         gameState.setLastWinType(winType);
+
+        // 按当前规则进行一局结算（一个人赢三家赔）
+        applyScoring(player, isZiMo, winType);
 
         // 记录最近一次已执行的动作：胡
         gameState.setLastActionPlayerId(player.getId());
@@ -1725,6 +1789,125 @@ public class GameEngine {
     }
 
     /**
+     * 根据当前规则为本局胡牌进行计分，并把分数直接累加到各玩家的 Player.score 上。
+     *
+     * 规则（一个人赢三家赔）：
+     * - 基础分：底 + 花 + 金 + 杠
+     *   - 花：每张 1 分（使用玩家面前的花牌区）
+     *   - 杠：明杠每个 1 分，暗杠每个 2 分
+     *   - 金：每张 1 分（手牌/明牌/暗杠中所有金牌）
+     *   - 底：按庄数计，1 庄 = 1 分，2 庄 = 2 分，3 庄及以上封顶为 3 分
+     * - 自摸： (底 + 花 + 金 + 杠) × 2
+     * - 特殊胡牌：底 + 花 + 金 + 特殊牌分数（不再额外计算杠分，也不区分是否自摸）
+     *
+     * 说明：
+     * - 这里采用“庄数 = 连庄次数 + 1，最多 3”的近似：连庄 0/1/2+ 分别对应底 1/2/3。
+     * - 金牌计数时，不统计花牌区，只统计参与胡牌的牌（手牌 + 明牌 + 暗杠）。
+     */
+    private void applyScoring(Player winner, boolean isZiMo, String winType) {
+        if (winner == null || gameState.getPlayers() == null || gameState.getPlayers().isEmpty()) {
+            return;
+        }
+
+        // 1. 底分：按连庄次数 + 1 计算，最多 3 分
+        int dealerBase = Math.min(gameState.getConsecutiveDealerWins() + 1, 3);
+
+        // 2. 花分：玩家面前花牌数量（包括起手和对局中补到的所有花）
+        int flowerCount = winner.getFlowerTiles() == null ? 0 : winner.getFlowerTiles().size();
+
+        // 3. 金分：手牌 + 明牌 + 暗杠中的所有金
+        Tile goldTile = gameState.getGoldTile();
+        int goldCount = 0;
+        if (goldTile != null) {
+            // 手牌
+            for (Tile t : winner.getHandTiles()) {
+                if (t != null && t.isSameAs(goldTile)) {
+                    goldCount++;
+                }
+            }
+            // 明牌
+            if (winner.getExposedMelds() != null) {
+                for (List<Tile> meld : winner.getExposedMelds()) {
+                    if (meld == null) continue;
+                    for (Tile t : meld) {
+                        if (t != null && t.isSameAs(goldTile)) {
+                            goldCount++;
+                        }
+                    }
+                }
+            }
+            // 暗杠
+            if (winner.getConcealedKongs() != null) {
+                for (List<Tile> kong : winner.getConcealedKongs()) {
+                    if (kong == null) continue;
+                    for (Tile t : kong) {
+                        if (t != null && t.isSameAs(goldTile)) {
+                            goldCount++;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. 杠分：明杠每个 1 分，暗杠每个 2 分
+        int mingGangCount = 0;
+        if (winner.getExposedMelds() != null) {
+            for (List<Tile> meld : winner.getExposedMelds()) {
+                if (meld != null && meld.size() == 4) {
+                    mingGangCount++;
+                }
+            }
+        }
+        int anGangCount = winner.getConcealedKongs() == null ? 0 : winner.getConcealedKongs().size();
+        int gangScore = mingGangCount * 1 + anGangCount * 2;
+
+        // 5. 特殊牌型分数表
+        Map<String, Integer> specialScore = new HashMap<>();
+        specialScore.put("天胡", 30);
+        specialScore.put("抢金", 30);
+        specialScore.put("无花无杠", 30);
+        specialScore.put("一张花", 15);
+        specialScore.put("花胡", 20);
+        specialScore.put("三金倒", 40);
+        specialScore.put("金雀", 60);
+        specialScore.put("金龙", 120);
+        specialScore.put("混一色", 120);
+        specialScore.put("清一色", 240);
+
+        int singlePay;
+        if (winType != null && specialScore.containsKey(winType)) {
+            // 特殊胡牌：底 + 花 + 金 + 特殊牌分数（不额外计杠分，也不乘自摸）
+            singlePay = dealerBase + flowerCount + goldCount + specialScore.get(winType);
+        } else {
+            int base = dealerBase + flowerCount + goldCount + gangScore;
+            if (isZiMo) {
+                singlePay = base * 2;
+            } else {
+                singlePay = base;
+            }
+        }
+
+        if (singlePay <= 0) {
+            return;
+        }
+
+        // 6. 一个赢三家赔：三家各付 singlePay，赢家收 3 * singlePay
+        int totalGain = 0;
+        for (Player p : gameState.getPlayers()) {
+            if (p == null) continue;
+            if (p.getId().equals(winner.getId())) {
+                continue;
+            }
+            p.setScore(p.getScore() - singlePay);
+            totalGain += singlePay;
+        }
+        winner.setScore(winner.getScore() + totalGain);
+
+        log.info("本局结算：赢家={}，类型={}，自摸={}，单家赔付={}，赢家本局进账={}，当前总分={}",
+                winner.getName(), winType, isZiMo, singlePay, totalGain, winner.getScore());
+    }
+
+    /**
      * 结算一局并决定是否开下一局 / 是否进入“确认继续”
      * @param winnerPlayerId 胜者（胡牌者），流局则为null
      */
@@ -1859,54 +2042,87 @@ public class GameEngine {
         for (int actionIdx = currentActionIndex; actionIdx < actionTypes.length; actionIdx++) {
             String actionType = actionTypes[actionIdx];
             
-            // 从当前玩家的下家开始，按逆时针顺序查找
-            int currentPlayerIndex = player.getPosition();
-            int startIndex = (currentPlayerIndex + 1) % 4;
-            
-            for (int offset = 0; offset < 4; offset++) {
-                int playerIndex = (startIndex + offset) % 4;
-                if (playerIndex == discardPlayerIndex) {
-                    continue; // 跳过出牌的玩家
-                }
-                
-                // 吃只能下家执行
-                if ("chi".equals(actionType)) {
-                    int nextPlayerIndex = (discardPlayerIndex + 1) % 4;
-                    if (playerIndex != nextPlayerIndex) {
-                        continue; // 跳过非下家
+            // 如果是胡牌，需要按照"下家 > 对家 > 上家"的优先级顺序查找下一个玩家
+            if ("hu".equals(actionType)) {
+                // 收集所有可以胡的玩家
+                List<String> canHuPlayers = new ArrayList<>();
+                for (Player p : gameState.getPlayers()) {
+                    if (p == null || p.getPosition() == discardPlayerIndex) {
+                        continue; // 跳过出牌的玩家
+                    }
+                    Map<String, Object> actions = gameState.getPlayerActions(p.getId());
+                    if (!actions.isEmpty() && Boolean.TRUE.equals(actions.get("canHu"))) {
+                        canHuPlayers.add(p.getId());
                     }
                 }
                 
-                Player otherPlayer = gameState.getPlayers().get(playerIndex);
-                Map<String, Object> actions = gameState.getPlayerActions(otherPlayer.getId());
+                // 按照优先级排序：下家 > 对家 > 上家
+                List<String> sortedHuPlayers = sortHuPlayersByPriority(canHuPlayers, discardPlayerIndex);
                 
-                if (actions.isEmpty()) {
-                    continue; // 该玩家没有可用操作
+                // 找到当前玩家在排序列表中的位置，下一个就是优先级次高的玩家
+                int currentIndex = sortedHuPlayers.indexOf(playerId);
+                if (currentIndex >= 0 && currentIndex < sortedHuPlayers.size() - 1) {
+                    String nextPlayerId = sortedHuPlayers.get(currentIndex + 1);
+                    Player nextPlayer = findPlayerById(nextPlayerId);
+                    if (nextPlayer != null) {
+                        gameState.setCurrentActionPlayerId(nextPlayerId);
+                        gameState.setCurrentActionType(actionType);
+                        log.info("玩家 {} 过，轮到玩家 {} 执行 {}（按位置优先级：下家>对家>上家）", 
+                            player.getName(), nextPlayer.getName(), actionType);
+                        return true;
+                    }
                 }
+                // 如果当前玩家是最后一个，或者找不到下一个，继续检查下一个优先级
+            } else {
+                // 其他操作（杠/碰/吃）仍然按逆时针顺序查找
+                int currentPlayerIndex = player.getPosition();
+                int startIndex = (currentPlayerIndex + 1) % 4;
                 
-                // 检查该玩家是否可以执行当前优先级的操作
-                boolean canAction = false;
-                switch (actionType) {
-                    case "hu":
-                        canAction = Boolean.TRUE.equals(actions.get("canHu"));
-                        break;
-                    case "gang":
-                        canAction = Boolean.TRUE.equals(actions.get("canGang"));
-                        break;
-                    case "peng":
-                        canAction = Boolean.TRUE.equals(actions.get("canPeng"));
-                        break;
-                    case "chi":
-                        canAction = Boolean.TRUE.equals(actions.get("canChi"));
-                        break;
-                }
-                
-                if (canAction) {
-                    // 找到下一个可以执行操作的玩家
-                    gameState.setCurrentActionPlayerId(otherPlayer.getId());
-                    gameState.setCurrentActionType(actionType);
-                    log.info("玩家 {} 过，轮到玩家 {} 执行 {}", player.getName(), otherPlayer.getName(), actionType);
-                    return true;
+                for (int offset = 0; offset < 4; offset++) {
+                    int playerIndex = (startIndex + offset) % 4;
+                    if (playerIndex == discardPlayerIndex) {
+                        continue; // 跳过出牌的玩家
+                    }
+                    
+                    // 吃只能下家执行
+                    if ("chi".equals(actionType)) {
+                        int nextPlayerIndex = (discardPlayerIndex + 1) % 4;
+                        if (playerIndex != nextPlayerIndex) {
+                            continue; // 跳过非下家
+                        }
+                    }
+                    
+                    Player otherPlayer = gameState.getPlayers().get(playerIndex);
+                    Map<String, Object> actions = gameState.getPlayerActions(otherPlayer.getId());
+                    
+                    if (actions.isEmpty()) {
+                        continue; // 该玩家没有可用操作
+                    }
+                    
+                    // 检查该玩家是否可以执行当前优先级的操作
+                    boolean canAction = false;
+                    switch (actionType) {
+                        case "hu":
+                            canAction = Boolean.TRUE.equals(actions.get("canHu"));
+                            break;
+                        case "gang":
+                            canAction = Boolean.TRUE.equals(actions.get("canGang"));
+                            break;
+                        case "peng":
+                            canAction = Boolean.TRUE.equals(actions.get("canPeng"));
+                            break;
+                        case "chi":
+                            canAction = Boolean.TRUE.equals(actions.get("canChi"));
+                            break;
+                    }
+                    
+                    if (canAction) {
+                        // 找到下一个可以执行操作的玩家
+                        gameState.setCurrentActionPlayerId(otherPlayer.getId());
+                        gameState.setCurrentActionType(actionType);
+                        log.info("玩家 {} 过，轮到玩家 {} 执行 {}", player.getName(), otherPlayer.getName(), actionType);
+                        return true;
+                    }
                 }
             }
             
@@ -1956,6 +2172,81 @@ public class GameEngine {
             .toArray();
         
         return values[0] + 1 == values[1] && values[1] + 1 == values[2];
+    }
+    
+    /**
+     * 按照"下家 > 对家 > 上家"的优先级对可以胡牌的玩家列表进行排序
+     * @param playerIds 可以胡牌的玩家ID列表
+     * @param discardPlayerIndex 出牌玩家的索引
+     * @return 按优先级排序后的玩家ID列表
+     */
+    private List<String> sortHuPlayersByPriority(List<String> playerIds, int discardPlayerIndex) {
+        if (playerIds == null || playerIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        // 计算各玩家的优先级：下家=1（最高），对家=2，上家=3
+        Map<String, Integer> priorityMap = new HashMap<>();
+        for (String playerId : playerIds) {
+            Player p = findPlayerById(playerId);
+            if (p == null) continue;
+            
+            int playerIndex = p.getPosition();
+            int relativePosition = (playerIndex - discardPlayerIndex + 4) % 4;
+            
+            // 相对位置：1=下家，2=对家，3=上家（0是出牌者自己，不应该出现）
+            int priority;
+            if (relativePosition == 1) {
+                priority = 1; // 下家，最高优先级
+            } else if (relativePosition == 2) {
+                priority = 2; // 对家
+            } else if (relativePosition == 3) {
+                priority = 3; // 上家
+            } else {
+                priority = 999; // 其他情况（不应该出现）
+            }
+            priorityMap.put(playerId, priority);
+        }
+        
+        // 按照优先级排序
+        List<String> sorted = new ArrayList<>(playerIds);
+        sorted.sort((id1, id2) -> {
+            int p1 = priorityMap.getOrDefault(id1, 999);
+            int p2 = priorityMap.getOrDefault(id2, 999);
+            return Integer.compare(p1, p2);
+        });
+        
+        return sorted;
+    }
+    
+    /**
+     * 检查当前玩家是否是优先级最高的可以胡牌的玩家
+     * @param playerId 当前玩家ID
+     * @param discardPlayerIndex 出牌玩家的索引
+     * @return 如果是优先级最高的玩家，返回true；否则返回false
+     */
+    private boolean isHighestPriorityHuPlayer(String playerId, int discardPlayerIndex) {
+        // 收集所有可以胡的玩家
+        List<String> canHuPlayers = new ArrayList<>();
+        for (Player p : gameState.getPlayers()) {
+            if (p == null || p.getPosition() == discardPlayerIndex) {
+                continue; // 跳过出牌的玩家
+            }
+            Map<String, Object> actions = gameState.getPlayerActions(p.getId());
+            if (!actions.isEmpty() && Boolean.TRUE.equals(actions.get("canHu"))) {
+                canHuPlayers.add(p.getId());
+            }
+        }
+        
+        if (canHuPlayers.isEmpty()) {
+            return true; // 没有其他玩家可以胡，当前玩家可以胡
+        }
+        
+        // 按照优先级排序
+        List<String> sortedHuPlayers = sortHuPlayersByPriority(canHuPlayers, discardPlayerIndex);
+        
+        // 检查当前玩家是否是第一个（优先级最高的）
+        return !sortedHuPlayers.isEmpty() && sortedHuPlayers.get(0).equals(playerId);
     }
     
     public GameState getGameState() {
