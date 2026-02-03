@@ -49,17 +49,29 @@ public class GameEngine {
     }
 
     /**
-     * 开始“一局”（一盘牌）：清理上局数据、按当前 dealerIndex 发牌、补花、开金、进入 PLAYING
+     * 开始“一局”（一盘牌）：清理上局数据、按当前 dealerIndex 发牌，
+     * 然后进入“手动补花阶段”和“等待庄家开金”，实际补花/开金由前端按钮驱动。
+     * 牌型规则、补花/开金的具体逻辑保持不变，仅拆开时间轴。
+     *
+     * 注意：该方法在本类内部以及少数控制入口中被调用，
+     * 单局结束后的自动开局不再直接在 finishHand 内触发，
+     * 而是通过控制器在短暂停留后显式调用公开方法 {@link #startNextHand()}。
      */
     private void startHand() {
         // 清理上局动作与局面数据
         gameState.clearAllActions();
         gameState.setCurrentActionPlayerId(null);
         gameState.setCurrentActionType(null);
+        gameState.setLastActionPlayerId(null);
+        gameState.setLastActionType(null);
         gameState.setLastDiscardedTile(null);
         gameState.setLastDiscardPlayerIndex(-1);
         gameState.getDiscardedTiles().clear();
         gameState.setGoldTile(null);
+        gameState.setReplacingFlowers(false);
+        gameState.setCurrentFlowerPlayerIndex(-1);
+        gameState.setFlowerRoundCount(0);
+        gameState.setWaitingOpenGold(false);
 
         // 重置每个玩家本局数据（手牌/明牌/花牌）
         for (Player p : gameState.getPlayers()) {
@@ -81,35 +93,15 @@ public class GameEngine {
         log.info("开始牌头摸牌...");
         dealTiles();
 
-        // 3. 补花
+        // 3. 进入“手动补花阶段”：从庄家开始，一轮一轮补花，实际补花由前端按钮驱动
         gameState.setPhase(GamePhase.REPLACING_FLOWERS);
-        log.info("开始按轮次补花...");
-        replaceAllFlowers();
+        gameState.setReplacingFlowers(true);
+        gameState.setFlowerRoundCount(0);
+        gameState.setWaitingOpenGold(false);
 
-        // 4. 开金
-        gameState.setPhase(GamePhase.OPENING_GOLD);
-        log.info("牌尾开出金牌...");
-        openGoldTile();
-
-        // 5. 进入对局
-        gameState.setPhase(GamePhase.PLAYING);
-        gameState.setCurrentPlayerIndex(gameState.getDealerIndex());
-
-        // 开局阶段：庄家在首打前可判断“天胡/三金倒”
-        // 三金倒优先级 > 天胡（最终以 WinValidator 的顺序保证）
-        // 同时，重置抢金窗口（必须等庄家首打后才开启）
-        gameState.setQiangJinWindowActive(false);
-        gameState.setLastDrawnTile(null);
-        gameState.setLastDrawPlayerIndex(-1);
-        gameState.setLastDrawValidHandCountBefore(-1);
-        Player dealer = gameState.getDealer();
-        if (dealer != null) {
-            checkAvailableActionsAfterDraw(dealer);
-        }
-
-        log.info("开局完成，庄家是：{}", gameState.getDealer().getName());
-        log.info("金牌是：{}", gameState.getGoldTile());
-        log.info("开始对局，当前玩家：{}", gameState.getCurrentPlayer().getName());
+        // 自动选择第一个“手上有花”的玩家作为补花起点；若全桌都没有花，直接进入开金阶段
+        selectInitialFlowerPlayer();
+        log.info("进入手动补花阶段，从庄家开始一轮一轮补花");
     }
 
     /**
@@ -190,45 +182,91 @@ public class GameEngine {
     }
 
     /**
-     * 按轮次补花
-     * 所有玩家按庄家开始逆时针顺序补花
-     * 如果补到的牌又是花牌，继续补，直到所有人补花完毕
-     * 注意：补花的牌不能是金牌（牌尾最后一张）
+     * 对单个玩家执行“一轮补花”：将其当前手牌中的花全部移入花区，并从牌尾补回。
+     * 该逻辑与原先 replaceAllFlowers 内对单个玩家的处理完全一致。
+     */
+    private void replaceFlowersForPlayer(Player player) {
+        List<Tile> flowers = player.getFlowerTilesInHand();
+        if (flowers.isEmpty()) {
+            return;
+        }
+
+        for (Tile flower : flowers) {
+            // 移除花牌
+            player.replaceFlowerTile(flower);
+
+            // 补一张新牌，从牌尾取牌
+            Tile newTile = drawNonGoldTile();
+            if (newTile != null) {
+                player.addTile(newTile);
+                log.debug("玩家 {} 补花：{} -> {}", player.getName(), flower, newTile);
+            }
+        }
+
+        // 补花后整理手牌（金牌排在最左侧）
+        player.sortHand(gameState.getGoldTile());
+    }
+
+    /**
+     * 选择补花阶段的起始玩家：
+     * - 从庄家开始逆时针寻找第一位“手上有花”的玩家；
+     * - 如果全桌都没有花，则直接结束补花，进入“等待开金”阶段。
+     */
+    private void selectInitialFlowerPlayer() {
+        if (!gameState.isReplacingFlowers()) {
+            return;
+        }
+        List<Player> players = gameState.getPlayers();
+        if (players == null || players.isEmpty()) {
+            return;
+        }
+
+        int dealerIndex = gameState.getDealerIndex();
+        int size = players.size();
+        int firstWithFlower = -1;
+        for (int offset = 0; offset < size; offset++) {
+            int idx = (dealerIndex + offset) % size;
+            Player p = players.get(idx);
+            if (!p.getFlowerTilesInHand().isEmpty()) {
+                firstWithFlower = idx;
+                break;
+            }
+        }
+
+        if (firstWithFlower >= 0) {
+            gameState.setCurrentFlowerPlayerIndex(firstWithFlower);
+        } else {
+            // 全桌都没有花，直接结束补花，进入开金阶段
+            finishFlowerPhaseAndWaitOpenGold();
+        }
+    }
+
+    /**
+     * 按轮次补花（批量版本）
+     * 保留该方法以兼容原有一次性补花逻辑，方便单元测试或将来需要“全自动模式”时使用。
+     * 当前正常对局流程不再直接调用此方法。
      */
     private void replaceAllFlowers() {
         boolean hasFlowers = true;
         int maxRounds = 10; // 防止无限循环
         int roundCount = 0;
-        
+
         while (hasFlowers && roundCount < maxRounds) {
             hasFlowers = false;
             roundCount++;
-            
+
             // 从庄家开始，逆时针按轮次补花
             for (int i = 0; i < 4; i++) {
                 int playerIndex = (gameState.getDealerIndex() + i) % 4;
                 Player player = gameState.getPlayers().get(playerIndex);
-                
-                List<Tile> flowers = player.getFlowerTilesInHand();
-                if (!flowers.isEmpty()) {
+
+                if (!player.getFlowerTilesInHand().isEmpty()) {
                     hasFlowers = true;
-                    for (Tile flower : flowers) {
-                        // 移除花牌
-                        player.replaceFlowerTile(flower);
-                        
-                        // 补一张新牌，从牌尾取牌
-                        Tile newTile = drawNonGoldTile();
-                        if (newTile != null) {
-                            player.addTile(newTile);
-                            log.debug("玩家 {} 补花：{} -> {}", 
-                                player.getName(), flower, newTile);
-                        }
-                    }
-                    player.sortHand(gameState.getGoldTile());
+                    replaceFlowersForPlayer(player);
                 }
             }
         }
-        
+
         log.info("所有人补花完毕，共进行{}轮", roundCount);
     }
     
@@ -240,6 +278,119 @@ public class GameEngine {
     private Tile drawNonGoldTile() {
         // 补花从牌尾开始，直接取最后一张
         return gameState.drawTileFromTail();
+    }
+
+    /**
+     * 手动补花：在补花阶段，轮到的那个玩家点击“补花”按钮。
+     * 规则完全沿用 replaceAllFlowers 中对该玩家的一轮处理。
+     */
+    public boolean playerReplaceFlowers(String playerId) {
+        if (gameState.getPhase() != GamePhase.REPLACING_FLOWERS || !gameState.isReplacingFlowers()) {
+            log.warn("当前不在补花阶段，忽略补花请求");
+            return false;
+        }
+
+        Player player = findPlayerById(playerId);
+        if (player == null) {
+            log.warn("玩家不存在：{}", playerId);
+            return false;
+        }
+
+        int expectedIndex = gameState.getCurrentFlowerPlayerIndex();
+        if (expectedIndex < 0 || expectedIndex >= gameState.getPlayers().size()) {
+            log.warn("当前补花索引非法: {}", expectedIndex);
+            return false;
+        }
+
+        Player expectedPlayer = gameState.getPlayers().get(expectedIndex);
+        if (!expectedPlayer.getId().equals(playerId)) {
+            log.warn("还没轮到玩家 {} 补花", player.getName());
+            return false;
+        }
+
+        // 执行该玩家本轮所有补花（可能摸多张，内部自己处理摸到花继续补）
+        if (!player.getFlowerTilesInHand().isEmpty()) {
+            replaceFlowersForPlayer(player);
+        } else {
+            log.debug("玩家 {} 本轮没有花牌，无需补花", player.getName());
+        }
+
+        // 轮到下一个补花玩家，或结束补花阶段
+        advanceFlowerTurnAfterPlayer();
+        return true;
+    }
+
+    /**
+     * 在某玩家完成一轮补花后，推进补花状态机：
+     * - 判断全桌是否还有花
+     * - 若没有：结束补花，进入“等待开金”
+     * - 若有：currentFlowerPlayerIndex 指向下一家（按庄家逆时针顺序）
+     */
+    private void advanceFlowerTurnAfterPlayer() {
+        int maxRounds = 10;
+        int currentRound = gameState.getFlowerRoundCount();
+
+        // 防御性：轮次过多时强行结束，避免极端情况
+        if (currentRound >= maxRounds) {
+            log.warn("补花轮次达到上限 {}，强制结束补花", maxRounds);
+            finishFlowerPhaseAndWaitOpenGold();
+            return;
+        }
+
+        List<Player> players = gameState.getPlayers();
+        if (players == null || players.isEmpty()) {
+            finishFlowerPhaseAndWaitOpenGold();
+            return;
+        }
+
+        int size = players.size();
+        int dealerIndex = gameState.getDealerIndex();
+
+        // 从当前玩家的下一家开始，自动跳过所有“手上没有花”的玩家
+        int nextIndex = (gameState.getCurrentFlowerPlayerIndex() + 1) % size;
+        int loops = 0;
+        boolean found = false;
+
+        while (loops < size) {
+            if (nextIndex == dealerIndex) {
+                // 每次绕回庄家，视为新一轮开始
+                currentRound++;
+                if (currentRound >= maxRounds) {
+                    log.warn("补花轮次达到上限 {}，强制结束补花", maxRounds);
+                    finishFlowerPhaseAndWaitOpenGold();
+                    return;
+                }
+            }
+
+            Player p = players.get(nextIndex);
+            if (!p.getFlowerTilesInHand().isEmpty()) {
+                found = true;
+                break;
+            }
+
+            nextIndex = (nextIndex + 1) % size;
+            loops++;
+        }
+
+        if (!found) {
+            // 整圈找不到任何有花的玩家，结束补花
+            finishFlowerPhaseAndWaitOpenGold();
+            return;
+        }
+
+        gameState.setFlowerRoundCount(currentRound);
+        gameState.setCurrentFlowerPlayerIndex(nextIndex);
+    }
+
+    /**
+     * 补花全部结束，进入“等待庄家开金”状态
+     */
+    private void finishFlowerPhaseAndWaitOpenGold() {
+        gameState.setReplacingFlowers(false);
+        gameState.setPhase(GamePhase.OPENING_GOLD);
+        gameState.setWaitingOpenGold(true);
+        // 这里不调用 openGoldTile()，等待庄家点击按钮
+        log.info("所有人补花完毕，进入开金阶段，等待庄家点击“开金”");
     }
 
     /**
@@ -290,6 +441,47 @@ public class GameEngine {
     }
 
     /**
+     * 庄家点击“开金”按钮。
+     * 使用原有的 openGoldTile 逻辑，不改规则，只改时机。
+     */
+    public boolean playerOpenGold(String playerId) {
+        if (gameState.getPhase() != GamePhase.OPENING_GOLD || !gameState.isWaitingOpenGold()) {
+            log.warn("当前不在等待开金阶段，忽略开金请求");
+            return false;
+        }
+
+        Player dealer = gameState.getDealer();
+        if (dealer == null || !dealer.getId().equals(playerId)) {
+            log.warn("只有庄家才能开金，当前请求玩家: {}", playerId);
+            return false;
+        }
+
+        // 采用现有的开金逻辑（内部处理开到花 -> 算作庄家补花 的情况）
+        openGoldTile();
+
+        gameState.setWaitingOpenGold(false);
+
+        // 开金完成，进入 PLAYING 阶段（逻辑从原 startHand 中迁移）
+        gameState.setPhase(GamePhase.PLAYING);
+        gameState.setCurrentPlayerIndex(gameState.getDealerIndex());
+
+        // 开局阶段：庄家在首打前可判断“天胡/三金倒”
+        // 三金倒优先级 > 天胡（最终以 WinValidator 的顺序保证）
+        // 同时，重置抢金窗口（必须等庄家首打后才开启）
+        gameState.setQiangJinWindowActive(false);
+        gameState.setLastDrawnTile(null);
+        gameState.setLastDrawPlayerIndex(-1);
+        gameState.setLastDrawValidHandCountBefore(-1);
+        Player d = gameState.getDealer();
+        if (d != null) {
+            checkAvailableActionsAfterDraw(d);
+        }
+
+        log.info("庄家 {} 点击开金完成，进入对局阶段，金牌={}", dealer.getName(), gameState.getGoldTile());
+        return true;
+    }
+
+    /**
      * 玩家抓牌
      * 如果摸到花牌，算作玩家的补花，从牌尾摸一张牌，如果仍是花牌，继续补花循环
      */
@@ -317,16 +509,19 @@ public class GameEngine {
         gameState.setLastDrawPlayerIndex(player.getPosition());
         
         // 关键：在摸牌前检查是否满足抢金条件
-        // 抢金条件：1) 抢金窗口已打开 2) 摸牌前暗牌数为16 3) 摸牌前16张已听牌
+        // 抢金条件：1) 抢金窗口已打开 2) 摸牌前暗牌数为16
+        //          3) 摸牌前16张已听牌，且“听牌数 ≥ 2”（避免两张金起手时三金倒被当成抢金）
         boolean canQiangJinBeforeDraw = false;
         if (gameState.isQiangJinWindowActive() && validHandCountBefore == 16) {
             Tile goldTile = gameState.getGoldTile();
             if (goldTile != null) {
                 // 检查当前16张是否听牌
                 List<Tile> tingTiles = ActionChecker.getTingTiles(player, goldTile);
-                canQiangJinBeforeDraw = tingTiles != null && !tingTiles.isEmpty();
+                // 仅当“听牌张数 ≥ 2”时才允许抢金，防止两张金起手直接三金倒被视作抢金
+                canQiangJinBeforeDraw = tingTiles != null && tingTiles.size() >= 2;
                 if (canQiangJinBeforeDraw) {
-                    log.info("玩家 {} 摸牌前满足抢金条件：16张已听牌", player.getName());
+                    log.info("玩家 {} 摸牌前满足抢金条件：16张已听牌，听牌数={}", player.getName(),
+                        tingTiles.size());
                 }
             }
         }
@@ -554,6 +749,10 @@ public class GameEngine {
         gameState.clearAllActions();
         gameState.setCurrentActionPlayerId(null);
         gameState.setCurrentActionType(null);
+        // 新的一轮“别人出牌后可操作”检测开始时，清空最近动作记录，
+        // 防止上一轮吃/碰/杠/胡的提示残留到当前局面。
+        gameState.setLastActionPlayerId(null);
+        gameState.setLastActionType(null);
 
         // 先给出牌者设置基础动作（主要是听牌列表），避免前端无数据无法展示
         if (discardPlayerIndex >= 0 && discardPlayerIndex < gameState.getPlayers().size()) {
@@ -783,6 +982,10 @@ public class GameEngine {
         gameState.clearAllActions();
         gameState.setCurrentActionPlayerId(null);
         gameState.setCurrentActionType(null);
+
+        // 记录最近一次已执行的动作，供前端在玩家头像旁弹出“吃”提示
+        gameState.setLastActionPlayerId(player.getId());
+        gameState.setLastActionType("chi");
         
         log.info("玩家 {} 吃：{}", player.getName(), meld);
         
@@ -840,6 +1043,10 @@ public class GameEngine {
         gameState.clearAllActions();
         gameState.setCurrentActionPlayerId(null);
         gameState.setCurrentActionType(null);
+
+        // 记录最近一次已执行的动作：碰
+        gameState.setLastActionPlayerId(player.getId());
+        gameState.setLastActionType("peng");
         
         log.info("玩家 {} 碰：{}", player.getName(), meld);
         
@@ -897,6 +1104,10 @@ public class GameEngine {
         gameState.clearAllActions();
         gameState.setCurrentActionPlayerId(null);
         gameState.setCurrentActionType(null);
+
+        // 记录最近一次已执行的动作：明杠
+        gameState.setLastActionPlayerId(player.getId());
+        gameState.setLastActionType("gang");
         
         log.info("玩家 {} 杠：{}", player.getName(), meld);
         
@@ -1000,6 +1211,10 @@ public class GameEngine {
         // 暗杠属于“本轮出牌玩家”的操作，暗杠后依然应该轮到该玩家继续行动（补牌再出牌），
         // 因此需要显式将当前行动玩家索引指向暗杠玩家，避免仍停留在上一个出牌者身上。
         gameState.setCurrentPlayerIndex(player.getPosition());
+
+        // 记录最近一次已执行的动作：暗杠
+        gameState.setLastActionPlayerId(player.getId());
+        gameState.setLastActionType("anGang");
 
         log.info("玩家 {} 暗杠：{}", player.getName(), matchingTiles);
         
@@ -1116,6 +1331,10 @@ public class GameEngine {
         String winType = determineWinType(player, isZiMo, isQiangJin);
         gameState.setLastWinPlayerId(player.getId());
         gameState.setLastWinType(winType);
+
+        // 记录最近一次已执行的动作：胡
+        gameState.setLastActionPlayerId(player.getId());
+        gameState.setLastActionType("hu");
 
         log.info("玩家 {} 胡牌！类型={}", player.getName(), winType);
         finishHand(player.getId());
@@ -1545,8 +1764,9 @@ public class GameEngine {
             return;
         }
 
-        // 不需要确认：自动开下一局
-        startHand();
+        // 不需要确认：单局结束，但暂不立刻开下一局，交由控制器在短暂停留后调用 startNextHand。
+        // 这样可以给前端保留一段时间展示胡牌结果与结算信息。
+        gameState.setPhase(GamePhase.HAND_FINISHED);
     }
 
     /**
@@ -1580,9 +1800,22 @@ public class GameEngine {
             return true;
         }
 
-        // 全员继续：开下一局
+        // 全员继续：立刻开下一局（此处属于轮庄确认后的新一圈开始，不需要额外的 5 秒停顿）
         startHand();
         return true;
+    }
+
+    /**
+     * 由控制器在“单局结束并短暂停留”之后显式调用，真正开始下一局。
+     * 仅当当前阶段为 HAND_FINISHED 时才会生效，避免被误调用。
+     */
+    public void startNextHand() {
+        if (gameState.getPhase() != GamePhase.HAND_FINISHED) {
+            log.warn("当前阶段不是 HAND_FINISHED，忽略 startNextHand 调用，当前阶段={}", gameState.getPhase());
+            return;
+        }
+        log.info("控制器触发 startNextHand，开始新的一局");
+        startHand();
     }
     
     /**

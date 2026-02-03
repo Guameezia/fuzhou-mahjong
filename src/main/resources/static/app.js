@@ -4,6 +4,7 @@ let currentPlayerId = null;
 let selectedTileId = null;
 let gameState = null;
 let continuePromptInitialized = false;
+let chiDialogInitialized = false;
 
 // 本地存储的键
 const STORAGE_KEYS = {
@@ -207,8 +208,87 @@ function connectWebSocket() {
 
 // 更新公共视图
 function updatePublicView(data) {
-    if (data.goldTile) {
-        document.getElementById('goldTile').textContent = formatTile(data.goldTile);
+    const goldInfoContainer = document.getElementById('goldTileInfo');
+    const goldTableContainer = document.getElementById('goldTileTable');
+
+    // 开金：同时更新信息栏里的小金牌和桌面本家上方的仿真金牌
+    const hasGold = data && data.goldTile && data.phase !== 'FINISHED';
+    if (hasGold) {
+        if (goldInfoContainer) {
+            goldInfoContainer.innerHTML = '';
+
+            // 小号金牌牌面（信息栏）
+            const smallTile = document.createElement('div');
+            smallTile.className = 'tile';
+            smallTile.style.width = '28px';
+            smallTile.style.height = '40px';
+
+            const smallImgUrl = typeof getTileImageUrl === 'function'
+                ? getTileImageUrl(data.goldTile.type, data.goldTile.value)
+                : null;
+
+            if (smallImgUrl) {
+                const img = document.createElement('img');
+                img.src = smallImgUrl;
+                img.alt = formatTile(data.goldTile);
+                img.onerror = function() {
+                    this.style.display = 'none';
+                    smallTile.textContent = formatTile(data.goldTile);
+                    smallTile.style.fontSize = '12px';
+                };
+                img.onload = function() {
+                    smallTile.style.fontSize = '0';
+                };
+                smallTile.appendChild(img);
+                smallTile.style.fontSize = '0';
+            } else {
+                smallTile.textContent = formatTile(data.goldTile);
+                smallTile.style.fontSize = '12px';
+            }
+
+            goldInfoContainer.appendChild(smallTile);
+        }
+
+        if (goldTableContainer) {
+            goldTableContainer.innerHTML = '';
+
+            // 本家上方的金牌，只用牌面，不再用文字提示
+            const tableTile = document.createElement('div');
+            tableTile.className = 'tile gold';
+
+            const tableImgUrl = typeof getTileImageUrl === 'function'
+                ? getTileImageUrl(data.goldTile.type, data.goldTile.value)
+                : null;
+
+            if (tableImgUrl) {
+                const img = document.createElement('img');
+                img.src = tableImgUrl;
+                img.alt = formatTile(data.goldTile);
+                img.onerror = function() {
+                    this.style.display = 'none';
+                    tableTile.textContent = formatTile(data.goldTile);
+                    tableTile.style.fontSize = '16px';
+                };
+                img.onload = function() {
+                    tableTile.style.fontSize = '0';
+                };
+                tableTile.appendChild(img);
+                tableTile.style.fontSize = '0';
+            } else {
+                tableTile.textContent = formatTile(data.goldTile);
+                tableTile.style.fontSize = '16px';
+            }
+
+            goldTableContainer.appendChild(tableTile);
+        }
+    } else {
+        // 没有金牌（还未开金 / 一局结束 / 新一局开始）时，清空展示，避免上一局残留
+        if (goldInfoContainer) {
+            goldInfoContainer.innerHTML = '';
+        }
+        if (goldTableContainer) {
+            goldTableContainer.innerHTML = '';
+        }
     }
     
     if (data.remainingTiles !== undefined) {
@@ -226,6 +306,9 @@ function updatePublicView(data) {
     if (data.discardedTiles) {
         updateDiscardPile(data.discardedTiles);
     }
+
+    // 根据当前公共状态，在桌面上高亮显示正在执行吃/碰/杠/胡的玩家
+    updateActionHighlights(data);
 }
 
 // 更新游戏视图
@@ -248,10 +331,13 @@ function updateGameView(data) {
         updateMyFlowers(data.myFlowerTiles);
     }
     
-    // 更新可用操作和进张提示
+    // 更新可用操作和进张提示（对局阶段）
     if (data.availableActions) {
         updateAvailableActions(data.availableActions);
     }
+
+    // 开局前置阶段：补花 / 开金 按钮
+    updateSetupPhaseUI(data);
 
     // 轮庄一圈后：确认是否继续
     handleContinuePrompt(data);
@@ -341,6 +427,271 @@ function updateGameStatus(data) {
     }
     
     document.getElementById('gameStatus').textContent = statusText;
+}
+
+// === 吃 / 碰 / 杠 / 胡 全桌提示 ===
+
+// 记录最近一次已经展示过的动作，避免重复闪烁
+let lastShownActionKey = null;
+
+function clearAllPlayerActionBadges() {
+    document.querySelectorAll('.player-action-badge').forEach(badge => {
+        if (badge.parentNode) {
+            badge.parentNode.removeChild(badge);
+        }
+    });
+}
+
+function createBadgeForPosition(positionId, text) {
+    const posEl = document.getElementById(positionId);
+    if (!posEl) return;
+
+    // 清理该位置上旧的 badge
+    const old = posEl.querySelector('.player-action-badge');
+    if (old && old.parentNode) {
+        old.parentNode.removeChild(old);
+    }
+
+    const badge = document.createElement('div');
+    badge.className = 'player-action-badge';
+    badge.textContent = text;
+    posEl.appendChild(badge);
+
+    // 一段时间后自动移除（略长于 CSS 动画时间，保证能看清）
+    setTimeout(() => {
+        if (badge.parentNode) {
+            badge.parentNode.removeChild(badge);
+        }
+    }, 2200);
+}
+
+// 根据后端给出的胡牌类型，统一映射成需要展示的文案
+// - 普通胡：显示“胡”
+// - 自摸：显示“自摸”（若字符串本身包含“自摸”也视为自摸）
+// - 特殊胡牌：直接显示原始类型字符串，例如“抢金”“三金倒”
+function normalizeHuLabel(winType) {
+    if (!winType) return '胡';
+    const text = String(winType);
+    // 明确标识自摸
+    if (text.includes('自摸')) return '自摸';
+    // 简单兜底：后端若直接给“胡”
+    if (text === '胡') return '胡';
+    // 其他情况按类型原文显示，例如“抢金”“三金倒”
+    return text;
+}
+
+function showHuResultOverlay(playerName, winType) {
+    const overlay = document.getElementById('huResultOverlay');
+    const nameEl = document.getElementById('huResultPlayer');
+    const typeEl = document.getElementById('huResultType');
+    if (!overlay || !nameEl || !typeEl) return;
+
+    nameEl.textContent = playerName || '-';
+    typeEl.textContent = normalizeHuLabel(winType);
+
+    overlay.style.display = 'flex';
+
+    // 点击任意位置关闭
+    overlay.onclick = function() {
+        overlay.style.display = 'none';
+    };
+
+    // 自动关闭兜底
+    setTimeout(() => {
+        if (overlay.style.display !== 'none') {
+            overlay.style.display = 'none';
+        }
+    }, 5000);
+}
+
+function updateActionHighlights(data) {
+    if (!data || !data.players || !Array.isArray(data.players)) {
+        return;
+    }
+
+    // 1. 胡牌结果提示（优先级最高）
+    // 不再强制要求 phase === 'FINISHED'，只要后端给出了最近一局的胡牌玩家与胡牌类型，
+    // 就在全桌弹一次结算提示。这样每一局胡牌/流局后的那次胡牌结果都能清晰看到，
+    // 而不仅限于整房间“Game Over”的场景。
+    if (data.lastWinPlayerId && data.lastWinType) {
+        const winner = data.players.find(p => p.id === data.lastWinPlayerId);
+        const winnerName = winner ? winner.name : '未知玩家';
+        const actionKey = `hu-result-${data.lastWinPlayerId}-${data.lastWinType}`;
+
+        if (lastShownActionKey !== actionKey) {
+            lastShownActionKey = actionKey;
+            clearAllPlayerActionBadges();
+            // 在赢家面前也飘一个“小胡牌”提示
+            if (winner) {
+                // 计算赢家在方桌上的位置（bottom/right/top/left）
+                const myIndex = data.players.findIndex(p => p && p.id === currentPlayerId);
+                if (myIndex >= 0) {
+                    const positionMap = {
+                        bottom: myIndex,
+                        right: (myIndex + 1) % 4,
+                        top: (myIndex + 2) % 4,
+                        left: (myIndex + 3) % 4
+                    };
+                    let winnerPositionId = null;
+                    Object.keys(positionMap).forEach(pos => {
+                        if (data.players[positionMap[pos]] &&
+                            data.players[positionMap[pos]].id === data.lastWinPlayerId) {
+                            const idFirstUpper = pos.charAt(0).toUpperCase() + pos.slice(1);
+                            winnerPositionId = `player${idFirstUpper}`;
+                        }
+                    });
+                    if (winnerPositionId) {
+                        createBadgeForPosition(winnerPositionId, normalizeHuLabel(data.lastWinType));
+                    }
+                }
+            }
+
+            showHuResultOverlay(winnerName, data.lastWinType);
+        }
+        return;
+    }
+
+    // 2. 吃 / 碰 / 杠 / 胡 / 暗杠 等“已经确认执行的动作”提示
+    // 使用后端下发的 lastActionPlayerId/lastActionType，只在玩家真正点了按钮并且
+    // 后端完成动作处理后才会设置，避免“只是有机会操作就弹窗”的问题。
+    const actionPlayerId = data.lastActionPlayerId;
+    const actionType = data.lastActionType;
+
+    if (!actionPlayerId || !actionType) {
+        // 没有新的已确认动作需要提示时，不主动清理，让已有 badge 自己按超时消失
+        return;
+    }
+
+    const myIndex = data.players.findIndex(p => p && p.id === currentPlayerId);
+    if (myIndex < 0) return;
+
+    const positionMap = {
+        bottom: myIndex,
+        right: (myIndex + 1) % 4,
+        top: (myIndex + 2) % 4,
+        left: (myIndex + 3) % 4
+    };
+
+    let targetPositionId = null;
+    Object.keys(positionMap).forEach(pos => {
+        const idx = positionMap[pos];
+        const p = data.players[idx];
+        if (p && p.id === actionPlayerId) {
+            const idFirstUpper = pos.charAt(0).toUpperCase() + pos.slice(1);
+            targetPositionId = `player${idFirstUpper}`;
+        }
+    });
+
+    if (!targetPositionId) {
+        clearAllPlayerActionBadges();
+        return;
+    }
+
+    // 映射动作中文文案
+    let label = '';
+    switch (actionType) {
+        case 'chi':
+            label = '吃';
+            break;
+        case 'peng':
+            label = '碰';
+            break;
+        case 'gang':
+            label = '杠';
+            break;
+        case 'anGang':
+            label = '暗杠';
+            break;
+        case 'hu':
+            label = '胡';
+            break;
+        default:
+            label = actionType;
+    }
+
+    const actionKey = `${actionPlayerId}-${actionType}`;
+    if (lastShownActionKey === actionKey) {
+        return;
+    }
+    lastShownActionKey = actionKey;
+
+    clearAllPlayerActionBadges();
+    createBadgeForPosition(targetPositionId, label);
+}
+
+// === 补花 / 开金 阶段的前端按钮 ===
+function updateSetupPhaseUI(data) {
+    const actionButtonsPanel = document.getElementById('actionButtonsPanel');
+    const actionButtons = document.getElementById('actionButtons');
+    if (!actionButtonsPanel || !actionButtons || !data || !data.players) {
+        return;
+    }
+
+    // 轮庄确认阶段由 handleContinuePrompt 接管，这里不处理
+    if (data.phase === 'CONFIRM_CONTINUE') {
+        return;
+    }
+
+    const myIndex = data.players.findIndex(p => p && p.id === currentPlayerId);
+    if (myIndex < 0) {
+        return;
+    }
+
+    // 1. 补花阶段：只在 REPLACING_FLOWERS 且 replacingFlowers=true 时生效
+    if (data.phase === 'REPLACING_FLOWERS' && data.replacingFlowers) {
+        const currentFlowerIndex = data.currentFlowerPlayerIndex;
+
+        // 轮到我补花时，给我一个“补花”按钮
+        if (currentFlowerIndex === myIndex) {
+            actionButtonsPanel.style.display = 'block';
+            actionButtons.innerHTML = '';
+
+            const btn = document.createElement('button');
+            btn.className = 'action-btn';
+            btn.textContent = '补花';
+            btn.onclick = function() {
+                if (!stompClient) return;
+                stompClient.send('/app/game/replaceFlower', {}, JSON.stringify({
+                    playerId: currentPlayerId
+                }));
+            };
+
+            actionButtons.appendChild(btn);
+        } else {
+            // 不轮到我时，不显示补花按钮（保留面板给其他逻辑使用）
+            // 这里不强制隐藏，因为其他阶段的逻辑可能需要使用同一面板
+        }
+
+        return;
+    }
+
+    // 2. 开金阶段：只在 OPENING_GOLD 且 waitingOpenGold=true 时生效
+    if (data.phase === 'OPENING_GOLD' && data.waitingOpenGold) {
+        const dealerIndex = data.dealerIndex;
+
+        if (dealerIndex === myIndex) {
+            actionButtonsPanel.style.display = 'block';
+            actionButtons.innerHTML = '';
+
+            const btn = document.createElement('button');
+            btn.className = 'action-btn';
+            btn.textContent = '开金';
+            btn.onclick = function() {
+                if (!stompClient) return;
+                stompClient.send('/app/game/openGold', {}, JSON.stringify({
+                    playerId: currentPlayerId
+                }));
+            };
+
+            actionButtons.appendChild(btn);
+        } else {
+            // 其他三家只看到“开金阶段”的状态提示，不显示按钮
+        }
+
+        return;
+    }
+
+    // 其他阶段：不动 actionButtonsPanel，由原有逻辑（吃碰杠胡、自摸等）接管
 }
 
 function ensureStyleTag(id, cssText) {
@@ -662,7 +1013,9 @@ function updateMyHand(tiles) {
         
         const tileDiv = document.createElement('div');
         tileDiv.className = 'tile dealing';
-        tileDiv.style.animationDelay = `${index * 0.05}s`;
+        // 起手发牌：四张四张一组，组与组之间稍微停顿一下，便于观看
+        const groupIndex = Math.floor(index / 4);
+        tileDiv.style.animationDelay = `${groupIndex * 0.25}s`;
         
         if (isGoldTile(tile)) {
             tileDiv.classList.add('gold');
@@ -707,8 +1060,17 @@ function updateMyHand(tiles) {
             tileDiv.style.fontSize = '18px';
         }
         
+        // 单击：只负责高亮选中
         tileDiv.onclick = function() {
             selectTile(tile.id, tileDiv);
+        };
+
+        // 双击：选中并立即出牌
+        tileDiv.ondblclick = function() {
+            // 先按单击逻辑选中这张牌（带高亮/动画）
+            selectTile(tile.id, tileDiv);
+            // 然后调用统一的出牌逻辑
+            discardSelected();
         };
         
         // 如果可以暗杠，添加右键菜单
@@ -1165,6 +1527,184 @@ function updateAvailableActions(actions) {
     }
 }
 
+function ensureChiDialogUI() {
+    if (chiDialogInitialized) return;
+    chiDialogInitialized = true;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'chiDialogOverlay';
+    overlay.style.position = 'fixed';
+    overlay.style.left = '0';
+    overlay.style.top = '0';
+    overlay.style.width = '100%';
+    overlay.style.height = '100%';
+    overlay.style.display = 'none';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.zIndex = '2500';
+    overlay.style.background = 'radial-gradient(circle at center, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.8) 60%)';
+
+    overlay.innerHTML = `
+        <div id="chiDialogCard" style="
+            min-width: 260px;
+            max-width: 90vw;
+            padding: 18px 20px 14px;
+            border-radius: 16px;
+            background: radial-gradient(circle at top, #ffffff 0%, #e3f2fd 40%, #bbdefb 100%);
+            box-shadow: 0 10px 35px rgba(0,0,0,0.6);
+        ">
+            <div style="font-size:18px;font-weight:800;margin-bottom:10px;color:#1a237e;">
+                请选择要吃的组合
+            </div>
+            <div id="chiOptionsContainer" style="
+                display:flex;
+                flex-direction:column;
+                gap:10px;
+                max-height:50vh;
+                overflow-y:auto;
+            "></div>
+            <div style="margin-top:12px;text-align:right;">
+                <button id="chiCancelBtn" class="action-btn" style="
+                    background:linear-gradient(135deg,#9e9e9e 0%,#757575 100%);
+                    padding:6px 18px;
+                    font-size:14px;
+                ">取消</button>
+            </div>
+        </div>
+    `;
+
+    overlay.addEventListener('click', function (e) {
+        if (e.target === overlay) {
+            hideChiDialog();
+        }
+    });
+
+    document.body.appendChild(overlay);
+
+    const cancelBtn = document.getElementById('chiCancelBtn');
+    if (cancelBtn) {
+        cancelBtn.onclick = function () {
+            hideChiDialog();
+        };
+    }
+}
+
+function hideChiDialog() {
+    const overlay = document.getElementById('chiDialogOverlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+    }
+}
+
+function createChiOptionTileElement(tile, isCenter) {
+    const tileDiv = document.createElement('div');
+    tileDiv.className = 'tile';
+    tileDiv.style.width = '40px';
+    tileDiv.style.height = '56px';
+    tileDiv.style.cursor = 'pointer';
+    tileDiv.style.margin = '0 2px';
+
+    if (isCenter) {
+        tileDiv.style.borderColor = '#1976d2';
+        tileDiv.style.boxShadow =
+            '0 0 12px rgba(25,118,210,0.6), inset 0 1px 0 rgba(255,255,255,0.9)';
+    }
+
+    const imageUrl = typeof getTileImageUrl === 'function'
+        ? getTileImageUrl(tile.type, tile.value)
+        : null;
+
+    if (imageUrl) {
+        const img = document.createElement('img');
+        img.src = imageUrl;
+        img.alt = formatTile(tile);
+        img.onerror = function () {
+            this.style.display = 'none';
+            tileDiv.classList.remove('has-image');
+            tileDiv.textContent = formatTile(tile);
+            tileDiv.style.fontSize = '14px';
+        };
+        img.onload = function () {
+            tileDiv.classList.add('has-image');
+        };
+        tileDiv.appendChild(img);
+        tileDiv.classList.add('has-image');
+    } else {
+        tileDiv.textContent = formatTile(tile);
+        tileDiv.style.fontSize = '14px';
+    }
+
+    return tileDiv;
+}
+
+function openChiDialog(candidates, discardedTile) {
+    ensureChiDialogUI();
+
+    const overlay = document.getElementById('chiDialogOverlay');
+    const container = document.getElementById('chiOptionsContainer');
+    if (!overlay || !container) return;
+
+    container.innerHTML = '';
+
+    const typeOrder = { left: 0, middle: 1, right: 2 };
+    candidates.sort((a, b) => {
+        const av = (a && a.type && typeOrder[a.type] !== undefined) ? typeOrder[a.type] : 0;
+        const bv = (b && b.type && typeOrder[b.type] !== undefined) ? typeOrder[b.type] : 0;
+        return av - bv;
+    });
+
+    candidates.forEach((cand) => {
+        const optionRow = document.createElement('div');
+        optionRow.style.display = 'flex';
+        optionRow.style.alignItems = 'center';
+        optionRow.style.justifyContent = 'center';
+        optionRow.style.padding = '6px 4px';
+        optionRow.style.borderRadius = '10px';
+        optionRow.style.background = 'rgba(255,255,255,0.8)';
+        optionRow.style.boxShadow = '0 2px 6px rgba(0,0,0,0.25)';
+        optionRow.style.cursor = 'pointer';
+        optionRow.style.transition = 'transform 0.15s ease, box-shadow 0.15s ease';
+
+        optionRow.onmouseenter = function () {
+            optionRow.style.transform = 'translateY(-2px)';
+            optionRow.style.boxShadow = '0 4px 12px rgba(0,0,0,0.35)';
+        };
+        optionRow.onmouseleave = function () {
+            optionRow.style.transform = 'translateY(0)';
+            optionRow.style.boxShadow = '0 2px 6px rgba(0,0,0,0.25)';
+        };
+
+        let seq = [];
+        if (cand.type === 'left') {
+            seq = [cand.tile1, cand.tile2, discardedTile];
+        } else if (cand.type === 'middle') {
+            seq = [cand.tile1, discardedTile, cand.tile2];
+        } else {
+            seq = [discardedTile, cand.tile1, cand.tile2];
+        }
+
+        seq.forEach((tile, idx) => {
+            const isCenter = (tile === discardedTile);
+            const tileEl = createChiOptionTileElement(tile, isCenter);
+            optionRow.appendChild(tileEl);
+            if (idx < seq.length - 1) {
+                const spacer = document.createElement('div');
+                spacer.style.width = '4px';
+                optionRow.appendChild(spacer);
+            }
+        });
+
+        optionRow.onclick = function () {
+            hideChiDialog();
+            doChi(cand.tile1.id, cand.tile2.id);
+        };
+
+        container.appendChild(optionRow);
+    });
+
+    overlay.style.display = 'flex';
+}
+
 // 显示吃牌对话框
 function showChiDialog(discardedTile) {
     if (!gameState || !gameState.myHandTiles) {
@@ -1231,20 +1771,12 @@ function showChiDialog(discardedTile) {
         return;
     }
     
-    // 如果有多个选择，让用户选择
+    // 如果只有一个组合，直接执行
     if (candidates.length === 1) {
         doChi(candidates[0].tile1.id, candidates[0].tile2.id);
     } else {
-        // 显示选择对话框
-        let message = '请选择要吃的组合：\n';
-        candidates.forEach((cand, index) => {
-            message += `${index + 1}. ${formatTile(cand.tile1)} ${formatTile(cand.tile2)} ${formatTile(discardedTile)}\n`;
-        });
-        const choice = prompt(message + '\n请输入序号（1-' + candidates.length + '）：');
-        const choiceIndex = parseInt(choice) - 1;
-        if (choiceIndex >= 0 && choiceIndex < candidates.length) {
-            doChi(candidates[choiceIndex].tile1.id, candidates[choiceIndex].tile2.id);
-        }
+        // 多个选择：使用前端弹窗展示仿真牌面，点击选择
+        openChiDialog(candidates, discardedTile);
     }
 }
 
@@ -1265,7 +1797,7 @@ function doChi(tileId1, tileId2) {
             return;
         }
     }
-    
+
     stompClient.send('/app/game/chi', {}, JSON.stringify({
         playerId: currentPlayerId,
         tileId1: tileId1,
@@ -1279,7 +1811,7 @@ function doPeng() {
         alert('未连接到服务器');
         return;
     }
-    
+
     stompClient.send('/app/game/peng', {}, JSON.stringify({
         playerId: currentPlayerId
     }));
@@ -1291,7 +1823,7 @@ function doGang() {
         alert('未连接到服务器');
         return;
     }
-    
+
     stompClient.send('/app/game/gang', {}, JSON.stringify({
         playerId: currentPlayerId
     }));
@@ -1303,7 +1835,7 @@ function doAnGang(tileId) {
         alert('未连接到服务器');
         return;
     }
-    
+
     stompClient.send('/app/game/anGang', {}, JSON.stringify({
         playerId: currentPlayerId,
         tileId: tileId
@@ -1316,7 +1848,7 @@ function doHu() {
         alert('未连接到服务器');
         return;
     }
-    
+
     stompClient.send('/app/game/hu', {}, JSON.stringify({
         playerId: currentPlayerId
     }));

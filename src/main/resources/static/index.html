@@ -288,6 +288,33 @@
             font-size: 10px;
         }
 
+        /* 桌面上的金牌展示：放在本家玩家上方（靠近自己这边），只有一张仿真牌面 */
+        .gold-tile-on-table {
+            position: absolute;
+            /* 位于桌面靠下方、刚好在自己玩家框上方 */
+            bottom: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none; /* 纯展示，不拦截点击 */
+        }
+
+        .gold-tile-on-table .tile {
+            width: 30px;
+            height: 42px;
+        }
+
+        /* 桌面这张金牌：只保留适度的金色边框，不做闪烁动画，避免太晃眼 */
+        .gold-tile-on-table .tile.gold {
+            border-color: #ffd700;
+            box-shadow:
+                0 3px 6px rgba(0, 0, 0, 0.35),
+                inset 0 1px 0 rgba(255, 255, 255, 0.9);
+            animation: none;
+        }
+
         /* 四个玩家位置 */
         .player-position {
             position: absolute;
@@ -803,6 +830,122 @@
             font-size: 14px;
             color: #1976d2;
         }
+
+        /* 吃 / 碰 / 杠 / 胡 动作提示：小牌漂浮在对应玩家前面 */
+        .player-action-badge {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            bottom: -28px;
+            padding: 6px 14px;
+            border-radius: 999px;
+            background: rgba(0, 0, 0, 0.85);
+            color: #fff;
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            pointer-events: none;
+            opacity: 0;
+            /* 时间拉长到 2 秒，更容易看清楚 */
+            animation: actionBadgeFade 2s ease-out forwards;
+            z-index: 30;
+            white-space: nowrap;
+        }
+
+        @keyframes actionBadgeFade {
+            0% {
+                opacity: 0;
+                transform: translate(-50%, 10px) scale(0.9);
+            }
+            20% {
+                opacity: 1;
+                transform: translate(-50%, 0) scale(1);
+            }
+            80% {
+                opacity: 1;
+                transform: translate(-50%, 0) scale(1);
+            }
+            100% {
+                opacity: 0;
+                transform: translate(-50%, -6px) scale(0.95);
+            }
+        }
+
+        /* 胡牌结果大弹窗（全桌都能看到） */
+        #huResultOverlay {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at center, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.9) 60%);
+            z-index: 3000;
+        }
+
+        #huResultOverlay .hu-card {
+            min-width: 260px;
+            max-width: 90vw;
+            padding: 22px 26px 18px;
+            border-radius: 18px;
+            background: radial-gradient(circle at top, #fff8e1 0%, #ffe0b2 40%, #ffcc80 100%);
+            box-shadow:
+                0 0 0 2px rgba(255,255,255,0.8),
+                0 14px 40px rgba(0,0,0,0.6);
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            animation: huCardPop 0.5s ease-out;
+        }
+
+        #huResultOverlay .hu-title {
+            font-size: 32px;
+            font-weight: 900;
+            letter-spacing: 4px;
+            color: #d32f2f;
+            text-shadow:
+                0 0 10px rgba(255,255,255,0.8),
+                0 0 25px rgba(211,47,47,0.9);
+            margin-bottom: 8px;
+        }
+
+        #huResultOverlay .hu-player {
+            font-size: 18px;
+            font-weight: 700;
+            color: #4e342e;
+            margin-bottom: 6px;
+        }
+
+        #huResultOverlay .hu-type {
+            font-size: 20px;
+            font-weight: 800;
+            color: #5d4037;
+            margin-bottom: 10px;
+        }
+
+        #huResultOverlay .hu-tip {
+            font-size: 13px;
+            color: #5d4037;
+            opacity: 0.85;
+        }
+
+        @keyframes huCardPop {
+            0% {
+                transform: scale(0.6) translateY(40px);
+                opacity: 0;
+            }
+            60% {
+                transform: scale(1.05) translateY(-4px);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(1) translateY(0);
+                opacity: 1;
+            }
+        }
     </style>
 </head>
 <body>
@@ -835,7 +978,9 @@
                 </div>
                 <div class="info-row">
                     <span>Gold: </span>
-                    <strong id="goldTile" style="color: #d32f2f; ">-</strong>
+                    <div id="goldTileInfo" style="display: flex; align-items: center; gap: 6px;">
+                        <!-- 金牌信息区域（小号牌面） -->
+                    </div>
                 </div>
                 <div class="info-row">
                     <span>Remaining Tiles: </span>
@@ -904,8 +1049,12 @@
 
                 <!-- 桌子中心（牌池） -->
                 <div class="table-center">
-                    <h3>💰</h3>
+                    <!-- 中央弃牌区 -->
                     <div class="discard-pile-center" id="discardPileCenter"></div>
+                </div>
+                <!-- 本家玩家上方的金牌展示区域（只在本轮有金时显示一张牌） -->
+                <div class="gold-tile-on-table" id="goldTileTableArea">
+                    <div id="goldTileTable"></div>
                 </div>
             </div>
 
@@ -930,10 +1079,18 @@
                 </div>
             </div>
 
-            <div class="action-buttons" style="position: relative; z-index: 100;">
-                <button class="action-btn" onclick="discardSelected()" id="discardBtn">🤞</button>
-            </div>
+            <!-- 原“点击按钮出牌”方式已改为双击手牌出牌，这里隐藏旧按钮以免误导 -->
 
+        </div>
+    </div>
+
+    <!-- 胡牌结果全桌弹窗 -->
+    <div id="huResultOverlay">
+        <div class="hu-card">
+            <div class="hu-title">胡</div>
+            <div class="hu-player" id="huResultPlayer">-</div>
+            <div class="hu-type" id="huResultType">-</div>
+            <div class="hu-tip">点击任意位置关闭</div>
         </div>
     </div>
 

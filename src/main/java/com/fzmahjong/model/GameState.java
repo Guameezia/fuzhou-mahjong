@@ -26,6 +26,9 @@ public class GameState {
     private Map<String, Map<String, Object>> availableActions; // 每个玩家可用的操作（玩家ID -> 操作类型 -> 详情）
     private String currentActionPlayerId;        // 当前应该执行操作的玩家ID（按优先级）
     private String currentActionType;            // 当前优先级操作类型（"hu", "gang", "peng", "chi"）
+    // 最近一次已实际执行的动作（用于前端弹出“吃/碰/杠/胡”提示，只在玩家确认后记录）
+    private String lastActionPlayerId;           // 最近一次执行动作的玩家ID
+    private String lastActionType;               // 最近一次执行的动作类型（"chi","peng","gang","anGang","hu"）
 
     // === 第一局预设牌序（测试用）===
     private boolean firstHandAfterStart = true;  // 是否为本房间“第一局”（第一局可用预设牌墙，之后恢复随机）
@@ -40,6 +43,12 @@ public class GameState {
     // === 胡牌结果记录 ===
     private String lastWinPlayerId;              // 最近一局胡牌玩家ID（流局则为null）
     private String lastWinType;                  // 最近一局胡牌类型（清一色/混一色/金龙/金雀/三金倒/无花无杠/天胡/抢金/一张花/自摸/胡）
+
+    // === 补花 / 开金阶段状态（仅控制时间轴，不改规则）===
+    private boolean replacingFlowers;            // 是否处于“手动补花阶段”
+    private int currentFlowerPlayerIndex;        // 当前轮到谁补花（0-3，对应 players 下标）
+    private int flowerRoundCount;                // 已经跑了多少轮补花（防止无限循环）
+    private boolean waitingOpenGold;             // 是否在等待庄家“开金”点击
 
     public GameState(String roomId) {
         this.roomId = roomId;
@@ -56,6 +65,8 @@ public class GameState {
         this.availableActions = new HashMap<>();
         this.currentActionPlayerId = null;
         this.currentActionType = null;
+        this.lastActionPlayerId = null;
+        this.lastActionType = null;
         this.qiangJinWindowActive = false;
         this.lastDrawnTile = null;
         this.lastDrawPlayerIndex = -1;
@@ -64,6 +75,11 @@ public class GameState {
         this.lastWinPlayerId = null;
         this.lastWinType = null;
         this.firstHandAfterStart = true;
+
+        this.replacingFlowers = false;
+        this.currentFlowerPlayerIndex = -1;
+        this.flowerRoundCount = 0;
+        this.waitingOpenGold = false;
     }
 
     public boolean isFirstHandAfterStart() {
@@ -340,6 +356,22 @@ public class GameState {
         this.currentActionType = currentActionType;
     }
 
+    public String getLastActionPlayerId() {
+        return lastActionPlayerId;
+    }
+
+    public void setLastActionPlayerId(String lastActionPlayerId) {
+        this.lastActionPlayerId = lastActionPlayerId;
+    }
+
+    public String getLastActionType() {
+        return lastActionType;
+    }
+
+    public void setLastActionType(String lastActionType) {
+        this.lastActionType = lastActionType;
+    }
+
     public boolean isQiangJinWindowActive() {
         return qiangJinWindowActive;
     }
@@ -394,5 +426,37 @@ public class GameState {
 
     public void setLastWinType(String lastWinType) {
         this.lastWinType = lastWinType;
+    }
+
+    public boolean isReplacingFlowers() {
+        return replacingFlowers;
+    }
+
+    public void setReplacingFlowers(boolean replacingFlowers) {
+        this.replacingFlowers = replacingFlowers;
+    }
+
+    public int getCurrentFlowerPlayerIndex() {
+        return currentFlowerPlayerIndex;
+    }
+
+    public void setCurrentFlowerPlayerIndex(int currentFlowerPlayerIndex) {
+        this.currentFlowerPlayerIndex = currentFlowerPlayerIndex;
+    }
+
+    public int getFlowerRoundCount() {
+        return flowerRoundCount;
+    }
+
+    public void setFlowerRoundCount(int flowerRoundCount) {
+        this.flowerRoundCount = flowerRoundCount;
+    }
+
+    public boolean isWaitingOpenGold() {
+        return waitingOpenGold;
+    }
+
+    public void setWaitingOpenGold(boolean waitingOpenGold) {
+        this.waitingOpenGold = waitingOpenGold;
     }
 }

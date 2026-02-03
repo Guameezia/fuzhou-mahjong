@@ -1,6 +1,7 @@
 package com.fzmahjong.controller;
 
 import com.fzmahjong.engine.GameEngine;
+import com.fzmahjong.model.GamePhase;
 import com.fzmahjong.model.GameState;
 import com.fzmahjong.model.Player;
 import com.fzmahjong.model.Tile;
@@ -137,7 +138,13 @@ public class GameController {
         boolean success = engine.playerDraw(request.getPlayerId());
         
         if (success) {
-            broadcastGameState(roomId, engine.getGameState());
+            GameState state = engine.getGameState();
+            broadcastGameState(roomId, state);
+
+            // 如果因为流局等原因导致本局结束，但无需轮庄确认，则在短暂停留后自动开下一局
+            if (state.getPhase() == GamePhase.HAND_FINISHED) {
+                startNextHandWithDelay(roomId, engine);
+            }
         }
     }
 
@@ -287,7 +294,14 @@ public class GameController {
         boolean success = engine.playerHu(request.getPlayerId());
         
         if (success) {
-            broadcastGameState(roomId, engine.getGameState());
+            GameState state = engine.getGameState();
+            broadcastGameState(roomId, state);
+
+            // 若单局结束且不需要轮庄确认，为了给前端预留结算/胡牌展示时间，
+            // 延迟约 5 秒再自动开下一局。
+            if (state.getPhase() == GamePhase.HAND_FINISHED) {
+                startNextHandWithDelay(roomId, engine);
+            }
         }
     }
 
@@ -351,6 +365,48 @@ public class GameController {
                 roomManager.destroyRoom(roomId);
                 log.info("收到 End 选择后，已解散房间 {}", roomId);
             }
+        }
+    }
+
+    /**
+     * 手动补花：补花阶段，当前轮到的玩家点击“补花”按钮。
+     */
+    @MessageMapping("/game/replaceFlower")
+    public void replaceFlower(@Payload ReplaceFlowerRequest request) {
+        String roomId = roomManager.getRoomIdByPlayerId(request.getPlayerId());
+        if (roomId == null) {
+            return;
+        }
+
+        GameEngine engine = roomManager.getEngine(roomId);
+        if (engine == null) {
+            return;
+        }
+
+        boolean success = engine.playerReplaceFlowers(request.getPlayerId());
+        if (success) {
+            broadcastGameState(roomId, engine.getGameState());
+        }
+    }
+
+    /**
+     * 开金：补花全部完成后，只允许庄家点击“开金”按钮。
+     */
+    @MessageMapping("/game/openGold")
+    public void openGold(@Payload OpenGoldRequest request) {
+        String roomId = roomManager.getRoomIdByPlayerId(request.getPlayerId());
+        if (roomId == null) {
+            return;
+        }
+
+        GameEngine engine = roomManager.getEngine(roomId);
+        if (engine == null) {
+            return;
+        }
+
+        boolean success = engine.playerOpenGold(request.getPlayerId());
+        if (success) {
+            broadcastGameState(roomId, engine.getGameState());
         }
     }
 
@@ -423,6 +479,11 @@ public class GameController {
         view.put("dealerChangesSinceCycleStart", gameState.getDealerChangesSinceCycleStart());
         view.put("continueDecisions", gameState.getContinueDecisions());
         view.put("goldTile", gameState.getGoldTile());
+        // 补花 / 开金阶段状态
+        view.put("replacingFlowers", gameState.isReplacingFlowers());
+        view.put("currentFlowerPlayerIndex", gameState.getCurrentFlowerPlayerIndex());
+        view.put("flowerRoundCount", gameState.getFlowerRoundCount());
+        view.put("waitingOpenGold", gameState.isWaitingOpenGold());
         // 最近一次摸到/补到的最终有效牌（非花）及其相关信息
         view.put("lastDrawnTile", gameState.getLastDrawnTile());
         view.put("lastDrawPlayerIndex", gameState.getLastDrawPlayerIndex());
@@ -432,6 +493,9 @@ public class GameController {
         view.put("remainingTiles", gameState.getWallTiles().size());
         view.put("currentActionPlayerId", gameState.getCurrentActionPlayerId());
         view.put("currentActionType", gameState.getCurrentActionType());
+        // 最近一次已实际执行的动作（用于前端“吃/碰/杠/胡”提示，只在确认后才设置）
+        view.put("lastActionPlayerId", gameState.getLastActionPlayerId());
+        view.put("lastActionType", gameState.getLastActionType());
         view.put("lastWinPlayerId", gameState.getLastWinPlayerId());
         view.put("lastWinType", gameState.getLastWinType());
         
@@ -489,6 +553,33 @@ public class GameController {
         if (currentPlayer != null) {
             engine.playerDraw(currentPlayer.getId());
         }
+    }
+
+    /**
+     * 在当前局已经结束（HAND_FINISHED）且不需要轮庄确认的情况下，
+     * 预留一小段时间（约 5 秒）用于前端展示胡牌结果和结算信息，然后自动开新的一局。
+     */
+    private void startNextHandWithDelay(String roomId, GameEngine engine) {
+        new Thread(() -> {
+            try {
+                // 预留约 5 秒时间给前端展示胡牌原因 / 结算信息
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                log.warn("等待下一局开始的延迟被中断", e);
+                Thread.currentThread().interrupt();
+            }
+
+            GameState state = engine.getGameState();
+            // 只有在阶段仍然是 HAND_FINISHED 时才真正开启下一局，避免与其它流程（如轮庄确认）冲突
+            if (state.getPhase() == GamePhase.HAND_FINISHED) {
+                engine.startNextHand();
+                GameState newState = engine.getGameState();
+                broadcastGameState(roomId, newState);
+                log.info("已在延迟后自动开启新的一局");
+            } else {
+                log.info("阶段已从 HAND_FINISHED 变更为 {}，放弃自动开新局", state.getPhase());
+            }
+        }).start();
     }
 
     // === 请求对象 ===
@@ -568,6 +659,20 @@ public class GameController {
         public void setPlayerId(String playerId) { this.playerId = playerId; }
         public boolean isContinue() { return isContinue; }
         public void setContinue(boolean aContinue) { isContinue = aContinue; }
+    }
+
+    public static class ReplaceFlowerRequest {
+        private String playerId;
+
+        public String getPlayerId() { return playerId; }
+        public void setPlayerId(String playerId) { this.playerId = playerId; }
+    }
+
+    public static class OpenGoldRequest {
+        private String playerId;
+
+        public String getPlayerId() { return playerId; }
+        public void setPlayerId(String playerId) { this.playerId = playerId; }
     }
 
     public static class SetTestHandRequest {
