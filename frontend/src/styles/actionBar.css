@@ -1,0 +1,91 @@
+/* 操作栏：窄长条悬浮，不挡手牌；放在手牌区域上方一点，高度尽量小 */
+.action-bar-float {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 200px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 12px;
+  min-height: 40px;
+  max-height: 44px;
+  background: rgba(227, 242, 253, 0.98);
+  border-radius: 22px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(33, 150, 243, 0.3);
+}
+
+.action-bar-float.hidden {
+  display: none;
+}
+
+.action-bar-buttons {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.action-bar-btn {
+  padding: 6px 14px;
+  min-height: 32px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: 16px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.action-bar-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.action-bar-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.action-bar-btn.btn-chi {
+  background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+  color: white;
+}
+
+.action-bar-btn.btn-peng {
+  background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+  color: white;
+}
+
+.action-bar-btn.btn-gang {
+  background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+  color: white;
+}
+
+.action-bar-btn.btn-hu {
+  background: linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%);
+  color: white;
+  font-weight: 700;
+}
+
+.action-bar-btn.btn-pass {
+  background: linear-gradient(135deg, #9e9e9e 0%, #757575 100%);
+  color: white;
+}
+
+.action-bar-btn.btn-continue-game {
+  background: linear-gradient(135deg, #9e9e9e 0%, #757575 100%);
+  color: white;
+}
+
+.action-bar-btn.btn-replace-flower,
+.action-bar-btn.btn-open-gold {
+  background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
+  color: white;
+}

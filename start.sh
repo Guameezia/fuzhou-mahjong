@@ -28,9 +28,15 @@ echo "Java 版本："
 java -version
 echo ""
 
-# 编译并运行
-echo "正在编译项目..."
-$MVN clean compile
+# 进入后端目录编译并运行
+BACKEND_DIR="$(cd "$(dirname "$0")" && pwd)/backend"
+if [ ! -f "$BACKEND_DIR/pom.xml" ]; then
+    echo "❌ 未找到 backend/pom.xml"
+    exit 1
+fi
+
+echo "正在编译项目 (backend)..."
+(cd "$BACKEND_DIR" && $MVN clean compile)
 
 if [ $? -eq 0 ]; then
     echo ""
@@ -39,7 +45,7 @@ if [ $? -eq 0 ]; then
     echo "正在启动服务器..."
     echo "访问: http://localhost:8080"
     echo ""
-    $MVN spring-boot:run
+    (cd "$BACKEND_DIR" && $MVN spring-boot:run)
 else
     echo ""
     echo "❌ 编译失败，请检查错误信息"
