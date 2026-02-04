@@ -29,3 +29,13 @@ The repo already includes the built frontend; **no need** for Node.js or `npm ru
 
 **前端构建 Frontend build**：仅当**你修改了前端代码**并想更新页面时，在 `frontend/` 执行 `npm run build`，产物会写入 `backend/.../static`。他人只跑后端时不必执行。  
 Only run `npm run build` in `frontend/` when **you change frontend code** and want to update the served app; not required for running the pre-built app.
+
+## 异地联机 | Remote play (不同网络与朋友联机)
+
+和好友不在同一 WiFi 时，可用内网穿透把本机游戏暴露到公网，对方用浏览器打开链接即可一起玩。**无需改代码、无需自建服务器。**
+
+1. 在本机先运行 `./start.sh` 启动游戏。
+2. 再运行 `./start-remote.sh`（需先安装 [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/)：`brew install cloudflared`），把脚本输出的 **https 链接** 发给朋友。
+3. 朋友在浏览器打开该链接即可加入房间。
+
+详细说明与其它方式（ngrok、localtunnel、端口转发）见 [REMOTE_PLAY.md](REMOTE_PLAY.md)。
