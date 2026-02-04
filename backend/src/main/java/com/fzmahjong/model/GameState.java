@@ -43,6 +43,7 @@ public class GameState {
     // === 胡牌结果记录 ===
     private String lastWinPlayerId;              // 最近一局胡牌玩家ID（流局则为null）
     private String lastWinType;                  // 最近一局胡牌类型（清一色/混一色/金龙/金雀/三金倒/无花无杠/天胡/抢金/一张花/自摸/胡）
+    private Map<String, Object> lastWinSettlement; // 最近一局结算明细：base, flower, gold, gang, special, isZiMo, singlePay
 
     // === 补花 / 开金阶段状态（仅控制时间轴，不改规则）===
     private boolean replacingFlowers;            // 是否处于“手动补花阶段”
@@ -74,6 +75,7 @@ public class GameState {
         this.canQiangJinBeforeDraw = false;
         this.lastWinPlayerId = null;
         this.lastWinType = null;
+        this.lastWinSettlement = null;
         this.firstHandAfterStart = true;
 
         this.replacingFlowers = false;
@@ -426,6 +428,14 @@ public class GameState {
 
     public void setLastWinType(String lastWinType) {
         this.lastWinType = lastWinType;
+    }
+
+    public Map<String, Object> getLastWinSettlement() {
+        return lastWinSettlement;
+    }
+
+    public void setLastWinSettlement(Map<String, Object> lastWinSettlement) {
+        this.lastWinSettlement = lastWinSettlement;
     }
 
     public boolean isReplacingFlowers() {

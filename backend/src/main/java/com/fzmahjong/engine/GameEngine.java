@@ -72,6 +72,7 @@ public class GameEngine {
         gameState.setCurrentFlowerPlayerIndex(-1);
         gameState.setFlowerRoundCount(0);
         gameState.setWaitingOpenGold(false);
+        gameState.setLastWinSettlement(null);
 
         // 重置每个玩家本局数据（手牌/明牌/花牌）
         for (Player p : gameState.getPlayers()) {
@@ -1875,9 +1876,11 @@ public class GameEngine {
         specialScore.put("清一色", 240);
 
         int singlePay;
+        int specialValue = 0;
         if (winType != null && specialScore.containsKey(winType)) {
             // 特殊胡牌：底 + 花 + 金 + 特殊牌分数（不额外计杠分，也不乘自摸）
-            singlePay = dealerBase + flowerCount + goldCount + specialScore.get(winType);
+            specialValue = specialScore.get(winType);
+            singlePay = dealerBase + flowerCount + goldCount + specialValue;
         } else {
             int base = dealerBase + flowerCount + goldCount + gangScore;
             if (isZiMo) {
@@ -1890,6 +1893,17 @@ public class GameEngine {
         if (singlePay <= 0) {
             return;
         }
+
+        // 结算明细供前端展示：底数+花数+金牌数+杠/特殊 (自摸×2)=每家要给
+        Map<String, Object> settlement = new HashMap<>();
+        settlement.put("base", dealerBase);
+        settlement.put("flower", flowerCount);
+        settlement.put("gold", goldCount);
+        settlement.put("gang", winType != null && specialScore.containsKey(winType) ? 0 : gangScore);
+        settlement.put("special", specialValue);
+        settlement.put("isZiMo", isZiMo);
+        settlement.put("singlePay", singlePay);
+        gameState.setLastWinSettlement(settlement);
 
         // 6. 一个赢三家赔：三家各付 singlePay，赢家收 3 * singlePay
         int totalGain = 0;

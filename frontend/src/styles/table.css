@@ -20,12 +20,12 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 28%;
-  height: 28%;
-  min-width: 80px;
-  min-height: 80px;
-  max-width: 200px;
-  max-height: 200px;
+  width: 32%;
+  height: 32%;
+  min-width: 90px;
+  min-height: 90px;
+  max-width: 220px;
+  max-height: 220px;
   background: rgba(0, 0, 0, 0.2);
   border-radius: 50%;
   display: flex;
@@ -40,19 +40,20 @@
 }
 
 .discard-pile-center {
+  width: 156px; /* 一行四张牌: 4 * 36px + 3 * 4px */
   max-width: 100%;
   max-height: 100%;
   overflow: auto;
   display: flex;
   flex-wrap: wrap;
-  gap: 3px;
+  gap: 4px;
   justify-content: center;
   align-items: center;
 }
 
 .discard-pile-center .tile {
-  width: 32px;
-  height: 45px;
+  width: 36px;
+  height: 50px;
   font-size: 10px;
 }
 
@@ -125,6 +126,25 @@
   min-width: 280px;
 }
 
+/* 本方：吃碰杠牌放在花牌右边，同一行 */
+.player-bottom .bottom-hand-melds-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.player-bottom .bottom-hand-melds-row .hand-and-flowers {
+  margin-top: 0;
+}
+
+.player-bottom .bottom-hand-melds-row .exposed-melds {
+  margin-top: 0;
+}
+
 .player-left {
   left: 8px;
   top: 50%;
@@ -145,8 +165,15 @@
 
 .player-top .player-info { order: 0; margin-bottom: 4px; }
 .player-top .exposed-melds { order: 1; margin-top: 0; margin-bottom: 4px; }
-.player-top .player-hand { order: 2; margin-top: 2px; }
-.player-top .player-flowers { order: 3; }
+.player-top .hand-and-flowers { order: 2; margin-top: 2px; }
+.player-top .hand-and-flowers {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.player-top .hand-and-flowers .player-flowers { margin-left: 0; }
 
 .player-name {
   font-weight: bold;
@@ -166,11 +193,24 @@
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
 }
 
+.hand-and-flowers {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.hand-and-flowers .player-flowers {
+  margin-top: 0;
+  margin-left: 0;
+}
+
 .player-hand {
   display: inline-flex;
   gap: 1px;
   justify-content: center;
-  margin-top: 6px;
+  margin-top: 0;
   flex-wrap: nowrap;
 }
 

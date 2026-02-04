@@ -39,35 +39,75 @@ export function PlayerPosition({ position, player, isActive, isDealer, actionBad
         <div className="player-name">{nameDisplay}</div>
         <div className="player-stats-score">{player.score ?? 0}</div>
       </div>
-      <div className="player-hand">
-        {handSize > 0 && (
-          <div className="tile-back tile-count-wrapper">
-            <span className="tile-count-badge">{handSize}</span>
+      {position === 'bottom' ? (
+        <div className="bottom-hand-melds-row">
+          <div className="hand-and-flowers">
+            <div className="player-hand">
+              {handSize > 0 && (
+                <div className="tile-back tile-count-wrapper">
+                  <span className="tile-count-badge">{handSize}</span>
+                </div>
+              )}
+            </div>
+            <div className="player-flowers">
+              {flowers.length > 0 && (
+                <div className="flower-tile tile-count-wrapper">
+                  {flowers[flowers.length - 1] && (
+                    <img
+                      src={getTileImageUrl(flowers[flowers.length - 1].type, flowers[flowers.length - 1].value)}
+                      alt={formatTile(flowers[flowers.length - 1])}
+                    />
+                  )}
+                  <span className="tile-count-badge">{flowers.length}</span>
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </div>
-      <div className="player-flowers">
-        {flowers.length > 0 && (
-          <div className="flower-tile tile-count-wrapper">
-            {flowers[flowers.length - 1] && (
-              <img
-                src={getTileImageUrl(flowers[flowers.length - 1].type, flowers[flowers.length - 1].value)}
-                alt={formatTile(flowers[flowers.length - 1])}
-              />
-            )}
-            <span className="tile-count-badge">{flowers.length}</span>
-          </div>
-        )}
-      </div>
-      <div className="exposed-melds">
-        {melds.map((meld, i) => (
-          <div key={i} className="meld-group">
-            {meld.map((tile, j) => (
-              <TileDisplay key={tile.id || j} tile={tile} />
+          <div className="exposed-melds">
+            {melds.map((meld, i) => (
+              <div key={i} className="meld-group">
+                {meld.map((tile, j) => (
+                  <TileDisplay key={tile.id || j} tile={tile} />
+                ))}
+              </div>
             ))}
           </div>
-        ))}
-      </div>
+        </div>
+      ) : (
+        <>
+          <div className="hand-and-flowers">
+            <div className="player-hand">
+              {handSize > 0 && (
+                <div className="tile-back tile-count-wrapper">
+                  <span className="tile-count-badge">{handSize}</span>
+                </div>
+              )}
+            </div>
+            <div className="player-flowers">
+              {flowers.length > 0 && (
+                <div className="flower-tile tile-count-wrapper">
+                  {flowers[flowers.length - 1] && (
+                    <img
+                      src={getTileImageUrl(flowers[flowers.length - 1].type, flowers[flowers.length - 1].value)}
+                      alt={formatTile(flowers[flowers.length - 1])}
+                    />
+                  )}
+                  <span className="tile-count-badge">{flowers.length}</span>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="exposed-melds">
+            {melds.map((meld, i) => (
+              <div key={i} className="meld-group">
+                {meld.map((tile, j) => (
+                  <TileDisplay key={tile.id || j} tile={tile} />
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       {actionBadge && (
         <div className="player-action-badge">{actionBadge}</div>
       )}

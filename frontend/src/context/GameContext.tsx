@@ -21,7 +21,7 @@ type GameContextValue = {
   gameState: GameStateType | null;
   publicData: Partial<GameStateType> | null;
   isConnected: boolean;
-  joinGame: (playerName: string, roomId?: string) => Promise<boolean>;
+  joinGame: (playerName: string, roomId?: string, rejoinPlayerId?: string) => Promise<boolean>;
   leaveGame: () => void;
   sendSync: () => void;
   sendDiscard: (tileId: string) => void;
@@ -55,8 +55,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     c.publish({ destination, body: JSON.stringify(body) });
   }, []);
 
-  const joinGame = useCallback(async (name: string, roomIdInput?: string): Promise<boolean> => {
-    const pid = generatePlayerId();
+  const joinGame = useCallback(async (name: string, roomIdInput?: string, rejoinPlayerId?: string): Promise<boolean> => {
+    const pid = rejoinPlayerId && roomIdInput?.trim() ? rejoinPlayerId : generatePlayerId();
     let rid = roomIdInput?.trim();
     try {
       if (!rid) {

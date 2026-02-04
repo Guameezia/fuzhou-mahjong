@@ -498,6 +498,7 @@ public class GameController {
         view.put("lastActionType", gameState.getLastActionType());
         view.put("lastWinPlayerId", gameState.getLastWinPlayerId());
         view.put("lastWinType", gameState.getLastWinType());
+        view.put("lastWinSettlement", gameState.getLastWinSettlement());
         
         // 玩家信息（隐藏手牌）
         List<Map<String, Object>> playersInfo = new java.util.ArrayList<>();

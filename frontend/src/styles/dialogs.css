@@ -52,7 +52,16 @@
   font-size: 20px;
   font-weight: 800;
   color: #5d4037;
+  margin-bottom: 8px;
+}
+
+.hu-settlement {
+  font-size: 15px;
+  font-weight: 700;
+  color: #4e342e;
   margin-bottom: 10px;
+  line-height: 1.4;
+  word-break: break-all;
 }
 
 .hu-tip {

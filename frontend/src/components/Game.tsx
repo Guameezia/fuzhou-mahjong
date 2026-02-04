@@ -8,12 +8,16 @@ import { ActionBar } from './ActionBar';
 import { ChiDialog } from './ChiDialog';
 import { HuResultOverlay } from './HuResultOverlay';
 import { ContinuePrompt } from './ContinuePrompt';
-import type { Tile } from '../types/game';
+import type { Tile, LastWinSettlement } from '../types/game';
 
 export function Game() {
   const { gameState, publicData, playerId, leaveGame, sendChi } = useGame();
   const [chiDialogTile, setChiDialogTile] = useState<Tile | null>(null);
-  const [huResult, setHuResult] = useState<{ playerName: string; winType: string | null } | null>(null);
+  const [huResult, setHuResult] = useState<{
+    playerName: string;
+    winType: string | null;
+    settlement?: LastWinSettlement;
+  } | null>(null);
 
   const phase = gameState?.phase;
   const players = gameState?.players ?? [];
@@ -44,14 +48,19 @@ export function Game() {
     [gameState?.myHandTiles, gameState?.goldTile, sendChi]
   );
 
+  // Show 胡 result when phase is HAND_FINISHED (one hand just ended) or FINISHED (game over). Clear when entering next hand.
   useEffect(() => {
-    if (phase !== 'FINISHED') return;
-    const winner = players.find((p) => p.id === gameState?.lastWinPlayerId);
-    setHuResult({
-      playerName: winner?.name ?? 'Unknown',
-      winType: gameState?.lastWinType ?? null,
-    });
-  }, [phase, gameState?.lastWinPlayerId, gameState?.lastWinType, players]);
+    if ((phase === 'HAND_FINISHED' || phase === 'FINISHED') && gameState?.lastWinPlayerId != null && gameState?.lastWinType != null) {
+      const winner = players.find((p) => p.id === gameState.lastWinPlayerId);
+      setHuResult({
+        playerName: winner?.name ?? 'Unknown',
+        winType: gameState.lastWinType ?? null,
+        settlement: gameState.lastWinSettlement ?? undefined,
+      });
+    } else {
+      setHuResult(null);
+    }
+  }, [phase, gameState?.lastWinPlayerId, gameState?.lastWinType, gameState?.lastWinSettlement, players]);
 
   useEffect(() => {
     if (phase !== 'FINISHED') return;
@@ -60,16 +69,6 @@ export function Game() {
     }, 1500);
     return () => clearTimeout(t);
   }, [phase, leaveGame]);
-
-  useEffect(() => {
-    if (gameState?.lastWinPlayerId != null && gameState?.lastWinType != null) {
-      const winner = players.find((p) => p.id === gameState.lastWinPlayerId);
-      setHuResult({
-        playerName: winner?.name ?? 'Unknown',
-        winType: gameState.lastWinType,
-      });
-    }
-  }, [gameState?.lastWinPlayerId, gameState?.lastWinType, players]);
 
   const statusText = (() => {
     switch (phase) {
@@ -87,6 +86,8 @@ export function Game() {
           if (cur) return cur.id === playerId ? "It's YOUR TURN!" : `It's [${cur.name}] turn`;
         }
         return '';
+      case 'HAND_FINISHED':
+        return 'Hand finished';
       case 'FINISHED':
         return 'Game Over';
       case 'CONFIRM_CONTINUE':
@@ -110,7 +111,7 @@ export function Game() {
         <div className="info-row">
           <span>Gold: </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {goldTile && phase !== 'FINISHED' && (
+            {goldTile && phase !== 'FINISHED' && phase !== 'HAND_FINISHED' && (
               <div className="tile has-image" style={{ width: 28, height: 40, fontSize: 0 }}>
                 <img src={getTileImageUrl(goldTile.type, goldTile.value)} alt={goldTile.type + goldTile.value} />
               </div>
@@ -135,7 +136,7 @@ export function Game() {
         id="tingPanel"
         className={`ting-panel ${(gameState?.availableActions?.tingTiles?.length ?? 0) > 0 ? 'visible' : ''}`}
       >
-        <h3 style={{ marginBottom: 8 }}>👂 Ready (ting)</h3>
+        <h3 style={{ marginBottom: 8 }}>👂</h3>
         <div className="ting-content">
           {(gameState?.availableActions?.tingTiles ?? []).map((tile) => (
             <div key={tile.id} className="tile has-image" style={{ width: 36, height: 50, cursor: 'default' }}>
@@ -155,6 +156,7 @@ export function Game() {
         <HuResultOverlay
           playerName={huResult.playerName}
           winType={huResult.winType}
+          settlement={huResult.settlement}
           onClose={() => setHuResult(null)}
         />
       )}

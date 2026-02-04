@@ -19,7 +19,7 @@ function AppContent() {
     const saved = getSavedSession();
     if (!saved) return;
     if (window.confirm(`Found an ongoing game.\nRoom ID: ${saved.roomId}\nPlayer: ${saved.playerName}\nRestore?`)) {
-      joinGame(saved.playerName, saved.roomId);
+      joinGame(saved.playerName, saved.roomId, saved.playerId);
     } else {
       clearSavedSession();
     }

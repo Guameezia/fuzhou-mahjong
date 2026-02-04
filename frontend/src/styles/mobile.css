@@ -51,12 +51,16 @@
   }
 
   .table-center {
-    width: 22%;
-    height: 22%;
-    min-width: 56px;
-    min-height: 56px;
-    max-width: 80px;
-    max-height: 80px;
+    width: 26%;
+    height: 26%;
+    min-width: 64px;
+    min-height: 64px;
+    max-width: 96px;
+    max-height: 96px;
+  }
+
+  .discard-pile-center {
+    width: 78px; /* 一行四张: 4 * 18px + 3 * 2px */
   }
 
   .discard-pile-center .tile {

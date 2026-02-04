@@ -36,8 +36,19 @@ export type GamePhase =
   | 'REPLACING_FLOWERS'
   | 'OPENING_GOLD'
   | 'PLAYING'
+  | 'HAND_FINISHED'
   | 'FINISHED'
   | 'CONFIRM_CONTINUE';
+
+export interface LastWinSettlement {
+  base?: number;
+  flower?: number;
+  gold?: number;
+  gang?: number;
+  special?: number;
+  isZiMo?: boolean;
+  singlePay?: number;
+}
 
 export interface GameState {
   roomId?: string;
@@ -60,6 +71,7 @@ export interface GameState {
   lastActionType?: string | null;
   lastWinPlayerId?: string | null;
   lastWinType?: string | null;
+  lastWinSettlement?: LastWinSettlement | null;
   lastDrawnTile?: Tile | null;
   lastDrawPlayerIndex?: number;
 }
