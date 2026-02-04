@@ -1,0 +1,185 @@
+/* 手机端：保持牌桌近似方形、上下家与牌池不重叠，手牌高度适中 */
+@media (max-width: 768px) {
+  body {
+    padding: 10px;
+  }
+
+  .container {
+    padding: 12px;
+  }
+
+  h1 {
+    font-size: 1.6em;
+    margin-bottom: 16px;
+  }
+
+  .table-container {
+    aspect-ratio: 1;
+    max-height: min(55vh, 420px);
+    padding: 8px;
+    margin: 12px 0;
+  }
+
+  .player-position {
+    min-width: 72px;
+    padding: 4px;
+  }
+
+  .player-top {
+    top: 4px;
+  }
+
+  .player-bottom {
+    bottom: 4px;
+    min-width: 160px;
+  }
+
+  .player-left {
+    left: 2px;
+  }
+
+  .player-right {
+    right: 2px;
+  }
+
+  .player-name {
+    font-size: 11px !important;
+  }
+
+  .player-stats-score {
+    font-size: 10px !important;
+  }
+
+  .table-center {
+    width: 22%;
+    height: 22%;
+    min-width: 56px;
+    min-height: 56px;
+    max-width: 80px;
+    max-height: 80px;
+  }
+
+  .discard-pile-center .tile {
+    width: 18px;
+    height: 26px;
+    font-size: 6px;
+  }
+
+  .gold-tile-on-table {
+    bottom: 22%;
+  }
+
+  .gold-tile-on-table .tile {
+    width: 20px;
+    height: 28px;
+  }
+
+  .meld-group .tile {
+    width: 18px;
+    height: 26px;
+    font-size: 7px;
+  }
+
+  .player-hand .tile-back {
+    width: 16px;
+    height: 22px;
+  }
+
+  .player-top .exposed-melds,
+  .player-bottom .exposed-melds {
+    gap: 18px;
+  }
+
+  .player-flowers .flower-tile {
+    width: 18px;
+    height: 26px;
+    font-size: 8px;
+  }
+
+  .tile-count-badge {
+    min-width: 14px;
+    height: 14px;
+    font-size: 10px;
+  }
+
+  .my-hand {
+    padding: 10px;
+    margin-top: 12px;
+  }
+
+  .my-hand h3 {
+    font-size: 14px;
+  }
+
+  .tiles-container {
+    margin-top: 8px;
+    gap: 3px;
+  }
+
+  .tiles-container .tile {
+    width: 32px;
+    height: 45px;
+    font-size: 12px;
+  }
+
+  .tile.selected {
+    transform: translateY(-12px) rotateX(8deg) scale(1.1);
+  }
+
+  .action-bar-float {
+    bottom: 140px;
+    padding: 5px 10px;
+    min-height: 36px;
+    max-height: 40px;
+    gap: 6px;
+  }
+
+  .action-bar-btn {
+    padding: 5px 10px;
+    min-height: 28px;
+    font-size: 13px;
+  }
+
+  .info-panel {
+    padding: 12px;
+  }
+
+  .info-row {
+    padding: 6px;
+    font-size: 13px;
+  }
+
+  .status {
+    padding: 10px;
+    font-size: 14px;
+  }
+
+  .player-action-badge {
+    font-size: 14px;
+    padding: 4px 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .table-container {
+    max-height: min(50vh, 320px);
+  }
+
+  .player-bottom {
+    min-width: 120px;
+  }
+
+  .tiles-container .tile {
+    width: 28px;
+    height: 40px;
+    font-size: 10px;
+  }
+
+  .action-bar-float {
+    left: 8px;
+    right: 8px;
+    transform: none;
+    width: auto;
+    bottom: 120px;
+  }
+}
