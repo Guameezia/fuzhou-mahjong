@@ -52,10 +52,16 @@ h1 {
   border-color: #667eea;
 }
 
+/* Login / primary CTA button: full width, normal size (not affected by action-bar styles) */
 .btn-primary {
+  display: block;
+  width: 100%;
+  padding: 12px 24px;
+  font-size: 18px;
+  border: 2px solid transparent;
+  border-radius: 8px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  border: none;
   cursor: pointer;
   font-weight: bold;
   margin-top: 10px;
